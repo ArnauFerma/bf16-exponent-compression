@@ -13,7 +13,7 @@ no se llena la GPU y la ocupacion medida no significa nada.
 
     python profile_run.py --block 256 --threads 128 --codec ladder
 """
-import argparse
+import argparse, os
 import numpy as np, cupy as cp
 import bitpack as bp, gpu_kernels as gk
 from bench_gpu import _floor_k, to_u32_index
@@ -39,10 +39,22 @@ else:
     code_of, len_of, slots, escape = bp.ladder_code_arrays(counts)
     d_slots = cp.asarray(gk.ladder_slots_flat(slots))
 
-lens = len_of[expo].astype(np.int64)
+# Cache en disco: profile_ncu.ps1 llama a este script 15 veces y codificar
+# 64M simbolos en numpy tarda ~1 min. Sin cache serian ~15 min tirados.
+cache = f"outputs/cache_{a.codec if a.codec != 'floor' else 'ladder'}_{a.n}.npz"
+if os.path.exists(cache):
+    z = np.load(cache)
+    packed, lens = z["packed"], z["lens"]
+    print(f"cache: {cache}")
+else:
+    packed, _, _ = bp.encode_stream(expo, code_of, len_of, a.n)
+    lens = len_of[expo]                      # longitudes <= 30, caben en uint8
+    np.savez(cache, packed=packed, lens=lens)
+    print(f"cache escrito: {cache}")
+
+lens = lens.astype(np.int64)
 starts = np.cumsum(lens) - lens
 total_bits = int(starts[-1] + lens[-1])
-packed, _, _ = bp.encode_stream(expo, code_of, len_of, a.n)
 d_words = cp.asarray(bp.to_words(packed, total_bits))
 offs = to_u32_index(starts[::a.block], total_bits)
 d_offs = cp.asarray(offs)
