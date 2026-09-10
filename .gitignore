@@ -5,3 +5,5 @@ outputs/
 real_model/
 *.bin
 *.safetensors
+portable_bundle.zip
+ncu_out/

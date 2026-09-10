@@ -72,6 +72,9 @@ bloque (más símbolos a decodificar en secuencia por hilo/warp).
 
 ## Bloqueado — requiere GPU
 
+> **Resuelto en la Fase 2** (ver mas abajo): ejecutada en una GTX 1050 Ti.
+> Lo de esta seccion describe el entorno de la Fase 1, no el actual.
+
 Este entorno no tiene GPU (`nvidia-smi` no existe, no hay `torch`
 instalable con CUDA). **Fase 2 (kernel GPU, Nsight Compute) y Fase 3
 (integración con matmul, tokens/s) no se pueden ejecutar aquí.** La
@@ -92,3 +95,126 @@ github.com/LeanModels/DFloat11, que sí trae kernels).
 | `outputs/bench_results.json` | Resultados numéricos completos de `bench.py`. |
 | `outputs/bench_log.txt` | Log de consola de la última ejecución de `bench.py`. |
 | `real_model/` | `model.safetensors` + `config.json` de Qwen3-0.6B descargados de Hugging Face. |
+
+---
+
+# Fase 2 — Kernels GPU: resultados
+
+Ejecutado en una **NVIDIA GeForce GTX 1050 Ti** (Pascal, SM 6.1, 6 SMs,
+4 GB, L2 de 1 MiB, pico teorico 112,1 GB/s), sobre los mismos pesos reales
+de Qwen3-0.6B (muestra de 64.000.000 de exponentes).
+
+## Que se implemento
+
+| Fichero | Que es |
+|---|---|
+| `gpu_kernels.py` | Los dos kernels: `decode_huffman` (LUT jerarquica de 4 KiB en shared) y `decode_ladder` (clz + switch, tabla de 10 B). |
+| `bitpack.py` | Encoder vectorizado en numpy. Produce un bitstream **byte a byte identico** al del `BitWriter` original (verificado contra ambos codecs, offsets incluidos); el bucle Python era inviable a escala de kernel. |
+| `verify_kernels.py` | Correccion: ambos kernels decodifican 32M de exponentes reales **bit a bit** correctos. |
+| `bench_gpu.py` | Medida, incluido el kernel `mem_floor`. |
+
+Ambos kernels comparten indice grueso, mapeo un-hilo-por-bloque, el lector
+de ventana `peek32` y el layout de salida. **Lo unico que cambia es el
+decodificador de simbolo.**
+
+Consumo de recursos (de `kernel.attributes`):
+
+| | registros/hilo | shared |
+|---|---|---|
+| `decode_huffman` | 21 | 4096 B |
+| `decode_ladder` | 15 | 16 B |
+
+## Metodologia
+
+- **Kernel suelo de memoria (`mem_floor`)**: mueve exactamente el mismo
+  trafico (lee las mismas palabras del bitstream, escribe los mismos bytes)
+  pero **no decodifica**. Es un techo de rendimiento empirico: acercarse a
+  el significa que manda la memoria y el codigo de entropia es irrelevante.
+- Esta GPU **no permite fijar relojes** (consumer bajo WDDM, y ademas mueve
+  el escritorio: oscila entre 139 y 1923 MHz). Se compensa con calentamiento
+  sostenido por configuracion, muestreo del reloj, orden de configuraciones
+  aleatorizado y mediana de 11 repeticiones. Con el escritorio despejado el
+  IQR queda en 0-3 ms.
+- El indice de bloques es **uint32**, como dice la spec del formato.
+
+## Resultados (64M simbolos, mediana de 11)
+
+| BLOCK | hilos | huffman ms | escalera ms | suelo ms | h/suelo | l/suelo | **l/h** |
+|---|---|---|---|---|---|---|---|
+| **64** | 128 | **9,70** | **9,73** | 9,57 | 1,01 | 1,02 | **1,003** |
+| 128 | 128 | 51,08 | 34,55 | 12,77 | 4,00 | 2,71 | 0,676 |
+| 256 | 128 | 82,75 | 56,95 | 13,31 | 6,22 | 4,28 | 0,688 |
+| 512 | 128 | 118,63 | 89,84 | 16,06 | 7,38 | 5,59 | 0,757 |
+| 1024 | 128 | 153,77 | 119,27 | 19,52 | 7,88 | 6,11 | 0,776 |
+
+## La respuesta a la pregunta que decide todo
+
+**En el unico punto de operacion que elegirias, el kernel esta limitado por
+MEMORIA, y la escalera no aporta nada.**
+
+Hay dos regimenes y apuntan en direcciones opuestas:
+
+- **BLOCK=64 es la configuracion mas rapida, por 3-16x.** Ahi los dos
+  decodificadores estan a **1-2% del suelo de memoria** y a **0,3-0,9% el
+  uno del otro**. El codigo de entropia es irrelevante. Peor: la escalera es
+  sistematicamente la **mas lenta** (1,003-1,009x), que es justo lo que cabe
+  esperar — en regimen limitado por memoria su bitstream un 4,8% mas grande
+  cuesta tiempo y no compra nada.
+- **BLOCK>=128** la escalera gana un 5-32%, confirmando la hipotesis de
+  limitado-por-computo... pero **todas esas configuraciones son 3-13x mas
+  lentas en absoluto**. Nadie las usaria.
+
+Es decir: **se materializa el riesgo #1 del handoff.** En este hardware la
+escalera queda como una curiosidad 0,85 puntos peor en compresion y sin
+compensacion en velocidad. El handoff decia explicitamente que ese seria un
+resultado valido; lo es.
+
+## Tres matices que acotan la conclusion
+
+**1. "Limitado por memoria" aqui significa limitado por un patron de acceso
+malo, no por el hardware.** El pico son 112,1 GB/s; la mejor configuracion
+logra **9,1 GB/s, un 8,2% del pico**. Cada hilo recorre su propia region, asi
+que un warp se dispersa en 32 flujos independientes. Hay ~10x de margen
+encima de la mesa, disponible para **los dos** codecs, atacando el patron de
+acceso (decodificacion cooperativa a nivel de warp, cargas vectorizadas).
+Ese premio es mucho mayor que los 0,85 puntos que separan a los dos codigos.
+
+**2. La salida domina el trafico.** Con BLOCK=64 se mueven 88,7 MB, de los
+cuales **64 MB (71%) son la salida** de exponentes. Los dos bitstreams se
+diferencian en menos de 1 MB. Estructuralmente el codigo de entropia solo
+puede influir en ~23% del trafico, y fusionar la mezcla de signo+mantisa
+para emitir BF16 directamente reduciria aun mas esa fraccion. Por eso los
+dos codecs convergen, y esto **no** es especifico de esta GPU.
+
+**3. El precipicio de BLOCK parece un efecto de L2, y por tanto no
+transfiere.** La L2 son 1024 KiB, y el working set residente la cruza entre
+BLOCK=128 (520 KiB) y BLOCK=256 (1040 KiB) — justo donde se hunde el
+rendimiento. Es **consistente, no probado**: BLOCK=128 ya se degrada aunque
+todavia quepa. Una H100 tiene ~50 MB de L2 y una RTX 4090 ~72 MB, asi que el
+precipicio se desplaza mucho a la derecha, BLOCK grande pasa a ser viable, y
+**ese es precisamente el regimen donde gana la escalera**. Este resultado
+argumenta en contra de la escalera en Pascal; **no zanja la pregunta en una
+tarjeta moderna**.
+
+## No medible aqui
+
+**Nsight Compute no soporta esta GPU.** NVIDIA retiro el soporte de Pascal
+(SM 6.x) en la version 2020.1; ninguna version actual perfila una 1050 Ti.
+El unico perfilador con soporte Pascal es `nvprof` legacy, que solo viene con
+CUDA Toolkit <=11.x (~3 GB de instalacion) y necesita permisos de admin para
+los contadores. Se decidio no instalarlo: el kernel suelo responde a la
+pregunta central de forma mas directa que los contadores, y el riesgo #4 del
+handoff (divergencia de warp en la rama de escape) es discutible cuando en el
+punto de operacion no manda el computo.
+
+Queda por tanto **sin medir**: ocupacion real, razones de stall de warp y
+divergencia.
+
+## Proximos pasos sugeridos
+
+1. **Local, gratis:** atacar el patron de acceso (8,2% del pico). Si se cierra
+   aunque sea la mitad de ese 10x, todas las conclusiones posteriores cambian.
+2. **~5 USD, media jornada:** alquilar una RTX 4090 o L40S. Rehacer el barrido
+   de BLOCK con L2 grande y usar Nsight Compute para stalls y divergencia.
+3. **Solo si 2 es prometedor:** A100/H100 para comparar cara a cara contra los
+   kernels publicados de DFloat11 en su hardware objetivo.
