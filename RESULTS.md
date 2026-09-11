@@ -218,3 +218,128 @@ divergencia.
    de BLOCK con L2 grande y usar Nsight Compute para stalls y divergencia.
 3. **Solo si 2 es prometedor:** A100/H100 para comparar cara a cara contra los
    kernels publicados de DFloat11 en su hardware objetivo.
+
+---
+
+# Fase 2b — Optimizacion del patron de acceso
+
+La Fase 2 dejo el kernel a **8,2% del pico** de ancho de banda. Eso no es
+"limitado por memoria" en el sentido util: el kernel suelo tiene el mismo
+patron de acceso malo, asi que medía el techo *de ese layout*, no el del
+hardware. Aqui se ataca el layout.
+
+## Dos problemas separables
+
+- **Entrada**: cada hilo recorre su propia region de bits -> un warp se
+  dispersa en 32 flujos. Pero las regiones de todos los hilos de un bloque
+  CUDA son contiguas: se pueden cargar coalescidas a shared.
+- **Salida**: 71% del trafico y va peor. Cada hilo escribe `BLOCK` bytes
+  consecutivos, asi que un warp escribe 32 bytes separados `BLOCK` entre si:
+  32 sectores distintos para 32 bytes de datos. Misma solucion.
+
+Se compilaron **4 variantes** (entrada x salida) para poder atribuir la
+mejora en vez de adivinarla. Todas verificadas bit a bit.
+
+## Resultado (BLOCK=64, 128 hilos, 64M simbolos)
+
+| variante | shared | ms | GB/s | vs base |
+|---|---|---|---|---|
+| base (global) | — | 9,74 | 9,2 | 1,00 |
+| smem entrada | 3,7 KB | 9,66 | 9,3 | 1,01x |
+| **smem salida** | 8,2 KB | **5,07** | **17,7** | **1,92x** |
+| ambas | 11,9 KB | 6,59 | 13,6 | 1,48x |
+
+**La salida sola casi duplica el rendimiento**: 8,2% -> 15,8% del pico.
+Coalescer la entrada vale ~1%: nunca fue el cuello de botella.
+
+**Hacer las dos es PEOR que solo la salida** (6,59 vs 5,07). La puesta en
+shared de la entrada gasta memoria compartida y anade una barrera sin
+comprar nada, y eso se paga en ocupacion. Combinar optimizaciones empeoro.
+
+## En BLOCK=256 se invierte — y eso confirma lo de la L2
+
+| BLOCK=256, 64 hilos | ms | vs base |
+|---|---|---|
+| base | 57,14 | 1,00 |
+| **smem entrada** | **13,05** | **4,38x** |
+| smem salida | 15,60 | 3,66x |
+
+Con BLOCK=64/128 el working set de entrada cabe en la L2 de 1 MiB, asi que
+ponerlo en shared es redundante (~1%). Con BLOCK=256 son 1040 KiB y ya **no
+cabe**: ponerlo en shared vale 4,38x. El cruce cae exactamente donde caia el
+precipicio de rendimiento de la Fase 2.
+
+Son ya **dos lineas de evidencia independientes** para la misma explicacion.
+
+## Efecto sobre el compromiso con la compresion
+
+| BLOCK | mejor ms | compresion |
+|---|---|---|
+| 64 | 5,07 | 29,37% |
+| 128 | 9,26 | 30,93% |
+| 256 | 13,05 | 31,72% |
+
+Sigue habiendo tension, pero mucho menos brutal: BLOCK=256 era 6x mas lento
+que BLOCK=64, ahora es 2,6x a cambio de 2,35 puntos mas de compresion.
+
+## Huffman vs escalera, rehecho con el kernel optimizado
+
+La conclusion de la Fase 2 se midio con el kernel lento. Al mover el cuello
+de botella hay que **rehacer** la comparacion, no extrapolarla.
+
+| BLOCK | hilos | variante | huffman ms | escalera ms | l/h |
+|---|---|---|---|---|---|
+| 64 | 64 | salida | 5,23 | **5,07** | 0,970 |
+| **64** | **128** | **salida** | **4,80** | 5,07 | **1,055** |
+| 128 | 128 | salida | 8,75 | 9,73 | 1,112 |
+| 256 | 128 | salida | 12,73 | 18,20 | 1,430 |
+| 256 | 64 | entrada | 13,04 | 13,05 | 1,001 |
+
+**Optimo global: Huffman, BLOCK=64, 128 hilos, salida en shared: 4,80 ms.**
+2,02x mas rapido que el mejor de la Fase 2 (9,70 ms).
+
+La optimizacion **refuerza** la conclusion de la Fase 2 en vez de tumbarla.
+La escalera ahora pierde en **los dos ejes**: 0,85 puntos peor de compresion
+*y* entre 5% y 43% mas lenta. Antes al menos ganaba en el regimen limitado
+por computo.
+
+Y este es el regimen donde debia ganar: al 16,5% del pico, el computo pesa
+mas que antes, y aun asi pierde. La duda que el propio HANDOFF planteaba
+resulta ser la correcta:
+
+> *"Huffman canonico usa LUT: **un** acceso a SRAM. La escalera usa `clz` +
+> rama + shift + mask. Contando instrucciones puede perder."*
+
+Pierde. Un acceso a shared bate una cadena dependiente de clz/rama/shift/mask.
+
+## Bug encontrado y corregido
+
+Al ampliar el barrido a BLOCK=512/1024 aparecio salida **incorrecta y no
+determinista** en el kernel base de la escalera. Causa: el `return` temprano
+estaba **antes** de `__syncthreads()`. Si `n_blocks` no es multiplo de
+`blockDim.x`, parte de los hilos del bloque salen y el resto espera en una
+barrera que ya no completan todos: comportamiento indefinido.
+`decode_huffman` sincronizaba antes de salir, por eso solo fallaba la
+escalera.
+
+Corregido; las 20 combinaciones BLOCK x hilos verifican bit a bit. El
+barrido de la Fase 2 se **repitio** con el kernel corregido y los numeros no
+se mueven (9,71/9,74 frente a 9,70/9,73 en BLOCK=64), asi que las
+conclusiones publicadas se mantienen.
+
+## Sin explicar
+
+Con BLOCK=128 y puesta en shared de la entrada, Huffman es **2x** mas rapido
+que la escalera (12,83 vs 26,14 ms), mucho mas de lo que justifica el 4,8%
+de diferencia de tamano del stream. Ni los registros (21 vs 15) ni la shared
+lo predicen. Queda anotado como anomalia, no explicado: no esta en el camino
+optimo, pero es el tipo de cosa que a veces esconde un bug.
+
+## Pendiente en hardware con L2 grande
+
+Todo esto es Pascal con 1 MiB de L2. En una RTX 4070 (36 MB de L2, 534 B por
+hilo residente, 6,3x mejor) el working set con BLOCK=1024 son 24,5 MB y
+**cabe**. Prediccion: el precipicio deberia desaparecer, la puesta en shared
+de la entrada deberia dejar de importar, y BLOCK=512-1024 pasaria a ser
+viable — la primera configuracion donde coinciden la mejor compresion
+(32,3%) y buena velocidad.

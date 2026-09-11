@@ -54,11 +54,11 @@ extern "C" __global__ void decode_ladder(
     int n_blocks, int block_size, i64 n_syms)
 {
     int b = blockIdx.x * blockDim.x + threadIdx.x;
-    if (b >= n_blocks) return;
 
     __shared__ u8 s_slots[16];
     if (threadIdx.x < 16) s_slots[threadIdx.x] = slots_flat[threadIdx.x];
-    __syncthreads();
+    __syncthreads();          // TODOS los hilos deben llegar a la barrera:
+    if (b >= n_blocks) return;   // el return va despues, nunca antes.
 
     i64 p     = (i64)block_bitpos[b];
     i64 start = (i64)b * block_size;
