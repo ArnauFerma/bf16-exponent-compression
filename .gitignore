@@ -7,3 +7,6 @@ real_model/
 *.safetensors
 portable_bundle.zip
 ncu_out/
+portable_bundle.tar.gz
+resultados/
+resultados.tar.gz
