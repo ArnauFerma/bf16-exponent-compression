@@ -19,16 +19,19 @@ else
 fi
 nvidia-smi --query-gpu=name,clocks.sm,clocks.max.sm --format=csv | tee $OUT/gpu_info.txt
 
-echo -e "\n== 1/4  barrido base (Huffman vs escalera, kernel original) =="
+echo -e "\n== 1/5  barrido base (Huffman vs escalera, kernel original) =="
 $PY bench_gpu.py 64000000 2>&1 | tee $OUT/1_bench_base.txt | tail -20
 
-echo -e "\n== 2/4  variantes del patron de acceso (atribucion) =="
+echo -e "\n== 2/5  variantes del patron de acceso (atribucion) =="
 $PY bench_opt.py 64000000 2>&1 | tee $OUT/2_bench_opt.txt | tail -25
 
-echo -e "\n== 3/4  Huffman vs escalera CON optimizacion =="
+echo -e "\n== 3/5  Huffman vs escalera CON optimizacion =="
 $PY bench_head2head.py 64000000 2>&1 | tee $OUT/3_head2head.txt | tail -25
 
-echo -e "\n== 4/4  perfilado con Nsight Compute =="
+echo -e "\n== 4/5  indice de 8 bits + prefix-sum =="
+$PY bench_idx8.py 64000000 2>&1 | tee $OUT/4_bench_idx8.txt | tail -20
+
+echo -e "\n== 5/5  perfilado con Nsight Compute =="
 if command -v ncu >/dev/null 2>&1; then
     bash profile_ncu.sh 2>&1 | tail -20
     cp -r ncu_out $OUT/ 2>/dev/null || true
