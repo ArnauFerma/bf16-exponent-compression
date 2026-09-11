@@ -343,3 +343,149 @@ hilo residente, 6,3x mejor) el working set con BLOCK=1024 son 24,5 MB y
 de la entrada deberia dejar de importar, y BLOCK=512-1024 pasaria a ser
 viable — la primera configuracion donde coinciden la mejor compresion
 (32,3%) y buena velocidad.
+
+---
+
+# Fase 2c — Codificacion vectorial (no) e indice de 8 bits (si)
+
+## Pregunta: sirve la codificacion vectorial / por pares?
+
+La intuicion es razonable: Huffman compra compresion pagando en tamano de
+diccionario, y la escalera existe precisamente para no pagar eso. Escalar a
+pares deberia ser donde mas se note. Se midio en vez de discutirlo.
+
+La ganancia posible tiene **dos fuentes** que conviene separar:
+
+**(a) Redundancia del codigo.** Huffman esta a 2,5832 bits contra una
+entropia de 2,5520: **0,0312 bits/simbolo** de margen. Ningun codificador de
+entropia — vectorial, aritmetico, ANS — puede superar esa cota si los
+simbolos son independientes.
+
+**(b) Correlacion entre exponentes vecinos.** Esto **no** esta acotado por
+(a): seria margen nuevo. Y es una pregunta empirica.
+
+Medido en seis ventanas repartidas por todo el modelo (no solo los primeros
+64M pesos, que son `embed_tokens` y podrian enganar):
+
+| offset | H(X) | H(Y dado X) | I(X;Y) |
+|---|---|---|---|
+| 0 | 2,5494 | 2,5491 | 0,00024 |
+| 93.954.048 | 2,5591 | 2,5589 | 0,00026 |
+| 187.908.096 | 2,5545 | 2,5543 | 0,00020 |
+| 375.816.192 | 2,6535 | 2,6435 | 0,00998 |
+| 563.724.288 | 2,6493 | 2,6406 | 0,00870 |
+| 711.632.384 | 2,6436 | 2,6347 | 0,00884 |
+
+**Informacion mutua maxima: 0,00998 bits.** Los exponentes vecinos son
+independientes a efectos practicos. El modelado por contexto de orden 1 lo
+confirma: **+0,0000 bits/simbolo**.
+
+Asi que solo queda (a), y Huffman sobre pares captura la mitad: 2,5668 vs
+2,5832, o sea 0,0164 bits/simbolo — **0,1% del fichero total**.
+
+**Y para la escalera es peor que inutil:**
+
+| escalera sobre pares | bits/simbolo | tabla |
+|---|---|---|
+| (1,1,1,2) | 5,1172 | 20 B |
+| (2,2,3,4) | 3,1712 | 64 B |
+| **(4,4,5,6)** | **2,7542** | 256 B |
+| (5,5,6,7) | 3,0699 | 512 B |
+| (6,6,7,8) | 3,5106 | 842 B |
+
+La mejor escalera sobre pares (2,7542) es **peor que la escalera escalar**
+(2,7089) con una tabla 25x mayor. La geometria de escalones funciona porque
+tres simbolos concentran el 69% de la masa; al repartir sobre 421 pares
+observados la distribucion se aplana y los escalones en potencias de dos no
+la siguen. La codificacion vectorial es justo la tecnica que infla tablas,
+que es lo unico que la escalera existe para evitar.
+
+**Donde la intuicion si acierta:** con modelado por contexto, Huffman
+necesitaria 31 x 4 KiB = **124 KiB de tablas, que no caben en los 48 KiB de
+shared**; la escalera necesitaria **310 B**. Si hubiera correlacion, la
+escalera seria la unica opcion viable en GPU. El argumento estructural es
+correcto; lo que no existe es la redundancia que explotar.
+
+**Un angulo si sobrevive, pero para Huffman:** codificar pares reduce a la
+mitad el numero de iteraciones de decodificacion, y por tanto la cadena
+serie de cargas dependientes, que es el cuello de botella real. Huffman
+sobre pares es a la vez 0,0164 bits/simbolo mas pequeno y la mitad de
+iteraciones, a cambio de una LUT de 8 KiB. Pendiente de probar.
+
+## Indice de 8 bits + prefix-sum de warp
+
+La longitud de bloque tiene poco rango: con BLOCK=64, entre 130 y 273 bits
+(rango 143 < 256). Cabe en 8 bits. Entonces, en vez de un offset absoluto
+uint32 por bloque, se guarda un uint32 por superbloque de 32 bloques (un
+warp) mas **un uint8 por bloque con su longitud**, y el offset se recupera
+con un prefix-sum exclusivo dentro del warp (5 pasos de `__shfl_up_sync`).
+
+| BLOCK | codec | indice | ms | B/bloque | compresion | |
+|---|---|---|---|---|---|---|
+| 64 | huffman | uint32 | 4,81 | 4,000 | 30,73% | |
+| **64** | **huffman** | **uint8+ps** | **4,82** | **1,125** | **32,97%** | **+2,25 pts** |
+| 64 | escalera | uint32 | 5,07 | 4,000 | 29,94% | |
+| 64 | escalera | uint8+ps | 5,11 | 1,125 | 32,19% | +2,25 pts |
+| 128 | huffman | uint32 | 8,74 | 4,000 | 32,29% | |
+| 128 | huffman | uint8+ps | 8,77 | 1,125 | 33,41% | +1,12 pts |
+
+**El prefix-sum no cuesta nada medible** (4,82 vs 4,81 ms, dentro del ruido):
+cinco `__shfl_up_sync` no se notan al lado de una cadena de 64 cargas
+dependientes. El trafico de indice baja de 4 MB a 1,125 MB.
+
+### Desaparece la tension velocidad/compresion
+
+Era el problema estructural de toda esta fase. Proyectado al modelo completo:
+
+| | config mas rapida | mejor compresion |
+|---|---|---|
+| antes | BLOCK=64 -> 30,22% | BLOCK=1024 -> 33,15%, pero **32x mas lento** |
+| despues | BLOCK=64 -> **32,46%** | BLOCK=1024 -> 33,15% |
+
+La distancia entre "rapido" y "comprime bien" pasa de 2,93 puntos a 0,69.
+Ya no hay que elegir.
+
+**Mejor configuracion global: Huffman, BLOCK=64, 128 hilos, salida en shared,
+indice de 8 bits — 4,82 ms y 32,97%.** Frente a la referencia de la Fase 2
+(9,70 ms, 30,73%): **2,01x mas rapido y +2,24 puntos**, con dos cambios que
+no tocan ni el codigo de entropia ni el bucle de decodificacion.
+
+### Limitacion
+
+El indice de 8 bits **solo llega hasta BLOCK=128**. Con BLOCK=256 el rango de
+longitud de bloque es 409, por encima de los 255 que caben en un delta de 8
+bits; el constructor lanza excepcion en vez de truncar en silencio. Para
+bloques mayores hace falta la variante de 16 bits relativos (2,016 B/bloque,
++1,94 puntos con BLOCK=256).
+
+## Lectura de conjunto
+
+Los dos cambios **estructurales** valen 2,24 puntos y 2x de velocidad. La
+pregunta sobre el codigo de entropia alrededor de la cual se construyo el
+proyecto vale 0,85 puntos, y en contra. El indice y el layout de memoria
+importaban muchisimo mas que Huffman-contra-escalera.
+
+La codificacion de entropia esta, a efectos practicos, terminada: Huffman se
+queda a 0,031 bits del suelo teorico y no hay correlacion que explotar. Todo
+el margen que queda es estructural.
+
+## Pendiente
+
+- **Salida BF16 fusionada**: hoy el kernel emite un byte de exponente por peso
+  y hace falta una pasada aparte para mezclar signo+mantisa (64 + 64 MB
+  leidos, 128 MB escritos = 256 MB, casi 3x el propio kernel). Fusionarla
+  baja el trafico total del pipeline de ~345 MB a ~217 MB (-37%) y quita un
+  lanzamiento entero. Necesario para la Fase 3 de todos modos.
+- **Huffman sobre pares**: mitad de iteraciones en la cadena serie.
+
+## Ficheros nuevos
+
+| Fichero | Que es |
+|---|---|
+| `kernel_opt.py` | Kernels con puesta en shared de entrada/salida (4 variantes, para atribuir). |
+| `kernel_idx8.py` | Indice de 8 bits + prefix-sum de warp, para Huffman y escalera. |
+| `bench_opt.py` | Atribucion de la mejora del patron de acceso. |
+| `bench_head2head.py` | Huffman vs escalera con el kernel optimizado. |
+| `bench_idx8.py` | uint32 vs uint8+prefix-sum: tiempo y compresion. |
+| `analysis_vector.py` | Entropia conjunta, informacion mutua, Huffman/escalera sobre pares. |
+| `analysis_index.py` | Informacion mutua por ventanas y coste de cada esquema de indice. |
