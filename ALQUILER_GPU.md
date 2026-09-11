@@ -1,135 +1,172 @@
-# Renting a GPU for this test — what to pick and how to run it
+# Alquilar una GPU por horas para las medidas que faltan
 
-Everything here is for *you*, not for a third party. Total cost is a couple of
-dollars and the run takes well under an hour.
+Documento autocontenido: con esto se puede hacer la prueba sin consultar nada
+mas. Coste total **~1,40 USD**, tiempo real **menos de una hora**.
 
 ---
 
-## 1. Which card to rent
+## 1. Que falta medir y por que hace falta otra tarjeta
 
-What governs the effect we're chasing is **L2 cache per resident thread**, not
-raw L2 size and not raw speed:
+Todo lo medido hasta ahora es una GTX 1050 Ti: Pascal, 6 SMs, **1 MiB de L2**.
+Dos limitaciones que no se pueden sortear en esa maquina:
 
-| card | L2 | SMs | resident threads | **L2 / thread** |
+1. El rendimiento se hunde al subir el parametro `BLOCK` (9,7 ms con BLOCK=64,
+   154 ms con BLOCK=1024). La explicacion propuesta es que el working set
+   residente desborda la L2. **En una tarjeta con L2 grande eso deberia
+   desaparecer** — y BLOCK grande es justo donde mejor comprime el formato.
+2. Nsight Compute **retiro el soporte de Pascal** en 2020.1. No hay forma de
+   perfilar esa tarjeta con ninguna version actual.
+
+## 2. Que tarjeta alquilar
+
+La cifra que gobierna el efecto **no** es el tamano de la L2 ni la velocidad
+bruta, sino la **L2 por hilo residente**:
+
+| tarjeta | L2 | SMs | hilos residentes | **L2 / hilo** |
 |---|---|---|---|---|
-| GTX 1050 Ti (yours) | 1 MB | 6 | 12,288 | 85 B |
-| RTX 3060 (brother) | 3 MB | 28 | 43,008 | 73 B |
-| **A100 80GB** | 40 MB | 108 | 221,184 | **190 B** |
-| H100 SXM | 50 MB | 132 | 270,336 | 194 B |
-| RTX 4090 | 72 MB | 128 | 196,608 | 384 B |
-| RTX 4070 (Cristian) | 36 MB | 46 | 70,656 | 534 B |
+| GTX 1050 Ti (la de casa) | 1 MB | 6 | 12.288 | 85 B |
+| RTX 3060 | 3 MB | 28 | 43.008 | 73 B |
+| **A100 80GB** | 40 MB | 108 | 221.184 | **190 B** |
+| H100 SXM | 50 MB | 132 | 270.336 | 194 B |
+| RTX 4090 | 72 MB | 128 | 196.608 | 384 B |
+| RTX 4070 | 36 MB | 46 | 70.656 | 534 B |
 
-Cristian's 4070 already covers the **high** end (534 B). Your own machine
-covers the **low** end (85 B). What's missing is the **middle** — and that is
-exactly where the A100 and H100 sit.
+### Recomendacion: **A100 80GB, ~1,39 USD/hora**
 
-### Recommendation: **A100 80GB, ~$1.39/hr**
+Dos razones:
 
-Two reasons, both good:
+1. **Rellena el hueco del medio.** Las tarjetas disponibles gratis se agolpan
+   en los extremos (85 B y 534 B). Con la A100 quedan cuatro puntos repartidos:
+   85 -> 190 -> 384 -> 534.
+2. **Es el hardware objetivo de DFloat11.** Cualquier afirmacion pasa a ser
+   directamente comparable con sus numeros publicados, en vez de una discusion
+   sobre tarjetas de consumo.
 
-1. It fills the gap at 190 B/thread, so you end up with four points spanning
-   85 → 190 → 384 → 534 instead of a cluster at each extreme.
-2. **It is DFloat11's target hardware.** Any claim you make becomes directly
-   comparable to their published numbers instead of an apples-to-oranges
-   argument about consumer cards.
+### Alternativa barata: **RTX 4090, ~0,34 USD/hora**
 
-**Budget alternative: RTX 4090, ~$0.34/hr.** Cheapest genuinely useful option,
-but at 384 B/thread it sits close to the 4070 you're already getting for free,
-so it adds less. Pick this only if you want to spend cents rather than dollars.
+Util, pero con 384 B/hilo queda cerca de una 4070, asi que aporta menos
+informacion por euro. Elegirla solo si se quiere gastar centimos.
 
-**Don't bother with:** RTX 3090 or A6000 (Ampere consumer/pro — only 6 MB of
-L2, *worse* per-thread than your 1050 Ti), or anything pre-Turing.
+### No alquilar
 
-## 2. Where to rent
+**RTX 3090 ni RTX A6000**: solo 6 MB de L2 y muchos hilos residentes, o sea
+~50 B/hilo — **peor que la 1050 Ti**. Nada anterior a Turing.
 
-| provider | RTX 4090 | A100 80GB | notes |
+## 3. Donde
+
+| proveedor | RTX 4090 | A100 80GB | notas |
 |---|---|---|---|
-| **RunPod** Community | ~$0.34/hr | ~$1.39/hr | easiest UI, per-second billing, no egress fees |
-| **RunPod** Secure | ~$0.69/hr | ~$1.39/hr | SLA, not needed here |
-| **Vast.ai** on-demand | ~$0.29–0.59/hr | varies | cheapest, but peer-to-peer: machine quality varies |
-| Vast.ai spot | ~$0.11–0.35/hr | varies | can be interrupted — fine for a 30-min run |
+| **RunPod** Community | ~0,34 $/h | ~1,39 $/h | interfaz sencilla, cobro por segundo, sin coste de trafico |
+| RunPod Secure | ~0,69 $/h | ~1,39 $/h | con SLA; innecesario aqui |
+| **Vast.ai** on-demand | ~0,29–0,59 $/h | variable | lo mas barato, pero es peer-to-peer y la calidad varia |
+| Vast.ai spot | ~0,11–0,35 $/h | variable | interrumpible; aceptable para 30 minutos |
 
-I'd use **RunPod Community** for a one-off: the interface is simpler, billing is
-per second, and you won't spend twenty minutes evaluating hosts.
+Para una prueba puntual: **RunPod Community**. Se tarda menos en desplegar que
+en comparar maquinas en Vast.
 
-Sources: [Vast.ai RTX 4090 pricing](https://vast.ai/pricing/gpu/RTX-4090),
-[RunPod pricing](https://www.runpod.io/pricing),
-[provider comparison](https://getdeploying.com/gpus/nvidia-rtx-4090)
+- RunPod: <https://www.runpod.io/pricing>
+- Vast.ai: <https://vast.ai/pricing/gpu/RTX-4090>
+- Comparador: <https://getdeploying.com/gpus/nvidia-rtx-4090>
 
-## 3. One thing that may not work, and why it doesn't matter
+## 4. Aviso importante: el perfilado puede no funcionar (y da igual)
 
-**GPU profiling inside rented containers is often blocked.** `ncu` needs
-driver-level counter access that the *host* controls, so you may hit
-`ERR_NVGPUCTRPERM` with no way to fix it from inside. RunPod instances
-sometimes allow it, sometimes don't.
+Dentro de un contenedor alquilado, `ncu` suele fallar con `ERR_NVGPUCTRPERM`:
+el permiso de contadores lo controla el **anfitrion**, no el contenedor, y no
+se puede arreglar desde dentro.
 
-This is fine. The timing benchmarks — the BLOCK sweep and the staging
-attribution — are what actually answer the L2 question. `ncu` only adds
-confirmation via L2 hit rate. `run_all.sh` detects `ncu` and skips it cleanly.
+**No pasa nada y no hay que buscar una instancia que lo permita.** Los
+barridos de tiempo — que son los que responden la pregunta de la L2 — no
+necesitan `ncu`, y `run_all.sh` lo detecta y se lo salta limpiamente. Coger la
+instancia barata.
 
-So: **don't pay extra or shop around for a profileable instance.** Take the
-cheap one.
+## 5. Paso a paso (RunPod)
 
-## 4. Step by step (RunPod)
-
-1. Sign up at runpod.io, add credit (minimum is $10; you'll use ~$2).
-2. **Deploy** → **Community Cloud** → pick **A100 80GB** (or RTX 4090).
-3. Template: any PyTorch or CUDA Ubuntu image. **Container disk: 20 GB**
-   minimum — the model plus the extracted weights need ~4 GB and the default
-   is sometimes tight.
-4. Deploy, then **Connect** → either the web terminal or **JupyterLab**.
-5. Get the bundle onto the box. Easiest is JupyterLab: open it and
-   **drag `portable_bundle.tar.gz` into the file browser**. Alternatives:
-   ```bash
-   # from your PC, if you installed runpodctl
-   runpodctl send portable_bundle.tar.gz
-   # then on the pod, run the receive command it prints
-   ```
-6. In the pod's terminal:
+1. Registrarse en <https://runpod.io> y anadir saldo (el minimo son 10 USD; se
+   van a gastar ~1,40).
+2. **Deploy** -> pestana **Community Cloud** -> elegir **A100 80GB**
+   (o RTX 4090).
+3. Plantilla: cualquier imagen de PyTorch o CUDA sobre Ubuntu.
+   **Container disk: 20 GB como minimo** — el modelo mas los pesos extraidos
+   ocupan ~4 GB y el valor por defecto a veces se queda corto.
+4. Desplegar y esperar a que quede en *Running*. Luego **Connect** -> terminal
+   web o **JupyterLab**.
+5. Subir el bundle. Tres opciones, de mas facil a menos:
+   - **JupyterLab**: abrirlo y **arrastrar `portable_bundle.tar.gz`** al
+     explorador de ficheros de la izquierda.
+   - **runpodctl** (si esta instalado en el PC de origen):
+     ```bash
+     runpodctl send portable_bundle.tar.gz
+     ```
+     y ejecutar en el pod el comando `receive` que imprime.
+   - **Descargarlo dentro del pod**, si esta subido a algun sitio accesible.
+6. En la terminal del pod:
    ```bash
    mkdir -p ~/bf16 && cd ~/bf16
-   tar xzf ~/portable_bundle.tar.gz     # adjust path if needed
+   tar xzf ~/portable_bundle.tar.gz      # ajustar la ruta si hace falta
    bash setup_cloud.sh
    ```
-   `setup_cloud.sh` is the container-aware variant — it copes with being root,
-   with no `sudo`, and with images that lack the `venv` module.
+   `setup_cloud.sh` es la variante pensada para contenedores: funciona siendo
+   root, sin `sudo`, y con imagenes que no traen el modulo `venv`.
 
-   Wait for:
-   ```
-   RESULTADO: ambos kernels correctos
-   ```
-   If that fails, stop — the script exits non-zero on purpose, because timings
-   from an incorrect decoder are worthless.
+   **Comprobar dos cosas en su salida:**
 
-7. Run everything:
+   - la linea `L2 por hilo residente:` — en una A100 deben salir ~190 B. Si
+     sale algo cercano a 50–85 B, la instancia no es la tarjeta que se pidio:
+     terminarla y volver a elegir.
+   - al final, `RESULTADO: ambos kernels correctos`. Si falla, el script sale
+     con error a proposito: **no seguir**, los tiempos no valdrian nada.
+
+7. Lanzar todo:
    ```bash
    bash run_all.sh
    ```
-   ~20 minutes. Produces `resultados.tar.gz`.
+   ~20 minutos. Deja `resultados.tar.gz`.
 
-8. Get it back: download through JupyterLab (right-click → Download), or
-   `runpodctl send resultados.tar.gz` from the pod.
+8. Recuperar el fichero: descargarlo desde JupyterLab (clic derecho ->
+   Download) o `runpodctl send resultados.tar.gz` desde el pod.
 
-9. **Terminate the pod.** Not "stop" — *terminate*, or you keep paying for
-   storage.
+9. **TERMINAR el pod.** No "Stop": **Terminate**. Un pod parado sigue cobrando
+   almacenamiento.
 
-## 5. What it costs
+## 6. Coste
 
-| | A100 | RTX 4090 |
+| | A100 80GB | RTX 4090 |
 |---|---|---|
-| setup + download | ~10 min | ~10 min |
-| benchmarks | ~15 min | ~15 min |
-| **total (~40 min, rounded to 1 hr)** | **~$1.40** | **~$0.35** |
+| preparacion + descarga del modelo | ~10 min | ~10 min |
+| medidas | ~15 min | ~15 min |
+| **total (~40 min, redondeado a 1 h)** | **~1,40 USD** | **~0,35 USD** |
 
-## 6. What to look for in the output
+## 7. Que mirar en el resultado
 
-The prediction, so you can read the result yourself without waiting for me:
+La prediccion, registrada antes de medir, para poder leer el resultado sin
+ayuda:
 
-> On any card with a large L2, the **BLOCK cliff should flatten**. On the
-> 1050 Ti, going from BLOCK=64 to BLOCK=1024 costs ~14× in time. If the L2
-> explanation is right, that ratio should shrink dramatically as L2-per-thread
-> rises, and `smem in=1` (input staging) should stop helping at BLOCK=256,
-> because the data already fits in cache.
+> En una tarjeta con L2 grande el **precipicio de BLOCK deberia aplanarse**. En
+> la 1050 Ti, pasar de BLOCK=64 a BLOCK=1024 cuesta ~14x en tiempo. Si la
+> explicacion de la L2 es correcta, esa proporcion deberia encogerse mucho al
+> subir la L2 por hilo, y la puesta de la **entrada** en shared deberia dejar
+> de ayudar con BLOCK=256, porque los datos ya caben en cache.
 
-If the cliff is still there on an A100, my explanation is wrong and we rethink
-before anyone writes anything up.
+Los ficheros a mirar dentro de `resultados.tar.gz`:
+
+- `1_bench_base.txt` — el barrido de BLOCK. **Es el que contesta la pregunta.**
+- `2_bench_opt.txt` — atribucion: si `smem in=1` deja de ganar con BLOCK=256,
+  la explicacion de la L2 queda confirmada.
+- `3_head2head.txt` — Huffman vs escalera con el kernel optimizado.
+- `4_bench_idx8.txt` — indice de 8 bits.
+- `ncu_out/` — solo si el perfilado funciono.
+
+**Si el precipicio sigue ahi, la explicacion de la L2 es falsa** y hay que
+reescribir la seccion 2b de RESULTS.md antes de sacar nada de esto del repo.
+
+## 8. Si algo falla
+
+| Lo que se ve | Que hacer |
+|---|---|
+| `nvidia-smi` no responde | la instancia no tiene GPU visible; terminar y coger otra |
+| `L2 por hilo` no coincide con la tarjeta pedida | no es la tarjeta anunciada; terminar y coger otra |
+| `FALLO` en la verificacion | parar; guardar la salida completa |
+| `ERR_NVGPUCTRPERM` | perfilado bloqueado por el anfitrion; **ignorar**, el resto vale |
+| `No space left on device` | el container disk se quedo corto; rehacer con 20+ GB |
+| falta `venv` | `setup_cloud.sh` ya lo maneja solo |
+| la instancia spot se corta a media prueba | relanzar `run_all.sh`; el modelo ya descargado se reutiliza |

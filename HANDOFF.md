@@ -1,276 +1,209 @@
-# Compresión lossless de pesos BF16 con código por niveles
+# Compresion lossless de pesos BF16 — handoff
 
-Handoff para continuar en Claude Code / entorno con GPU.
+Documento de estado. Ultima actualizacion: **2026-09-11**.
+
+Para el registro cronologico con todas las tablas, ver [RESULTS.md](RESULTS.md).
+La version original de este handoff (antes de tener GPU) esta en el historial
+de git, commit `098cf3b`.
 
 ---
 
 ## 0. Resumen en una frase
 
-Un código de prefijo por niveles ("escalera") sobre el campo exponente de
-BF16 consigue **31,28% de reducción lossless** frente al **32,08% de Huffman
-canónico**, usando una tabla de 64 bytes en lugar de una LUT jerárquica en
-SRAM. Falta medir si esa tabla pequeña compensa en rendimiento real.
+La hipotesis original — que un **codigo por escalones** con tabla de 10 B
+rendiria mejor que la LUT jerarquica de 4 KiB de Huffman — **esta refutada**:
+pierde en los dos ejes. Pero atacando el patron de acceso a memoria y el
+indice de bloques, el codec pasa de 9,70 ms / 30,73% a **4,82 ms / 32,97%**.
 
 ---
 
 ## 1. Estado de las afirmaciones
 
-Esto importa más que nada: separa lo medido de lo especulado.
+Esto importa mas que nada: separa lo medido de lo especulado.
 
 ### Medido y reproducible
 
-| Afirmación | Valor | Cómo se verificó |
+Salvo indicacion, sobre **Qwen3-0.6B real** (751.632.384 pesos BF16) y, para
+los kernels, una muestra de 64M exponentes en una **GTX 1050 Ti**.
+
+| Afirmacion | Valor | Como se verifico |
 |---|---|---|
-| Entropía del exponente BF16 | 2,718 bits | Conteo directo sobre 2,16M pesos |
-| Huffman canónico | 2,758 bits/exp → 32,08% | Codec implementado, roundtrip bit a bit OK |
-| Escalera propuesta | 2,870 bits/exp → 31,28% | Coste calculado sobre la distribución real |
-| Kraft de la escalera | exactamente 1,0000 | Suma de 2^-longitud |
-| Índice de bloques (256 símbolos, uint32) | 1,15% del total | Aritmética directa |
-| Esquema plano (tabla de 8, todos igual longitud) | 23,56% | Mismo método |
+| Entropia del exponente | 2,634 bits | Conteo exacto sobre 751,6M pesos |
+| Huffman canonico | 2,665 bits/exp -> 32,56% | Codec implementado, roundtrip bit a bit |
+| Escalera (1,1,1,2) | 2,800 bits/exp -> 31,72% | Idem, −0,85 puntos |
+| Ambos kernels GPU | roundtrip bit a bit correcto | 32M simbolos reales, 20 combinaciones BLOCK x hilos |
+| **El decodificador NO esta limitado por computo** | 8,2% del pico de ancho de banda | Kernel "suelo de memoria" con el mismo trafico |
+| Coalescer la **salida** | **1,92x** | 4 variantes compiladas para atribuir |
+| Coalescer la **entrada** | 1,01x | Nunca fue el cuello de botella |
+| Precipicio de BLOCK = efecto de L2 | cruce entre 128 y 256 | Coincide con el desbordamiento del working set, y con que la entrada en shared pase a valer 4,38x |
+| **Escalera mas lenta que Huffman** | 5% a 43% | Con el kernel optimizado, en todas las configuraciones |
+| Informacion mutua entre exponentes vecinos | **0,0002–0,0100 bits** | 6 ventanas repartidas por el modelo |
+| Modelado por contexto orden 1 | **+0,0000 bits/simbolo** | No hay correlacion que explotar |
+| Escalera sobre pares | 2,754 bits, peor que escalar (2,709) | Con tabla 25x mayor |
+| **Indice de 8 bits + prefix-sum** | **+2,25 puntos, coste nulo** | 4,82 vs 4,81 ms |
 
-### No medido — hipótesis a validar
+### No medido — sigue abierto
 
-| Hipótesis | Por qué es dudosa |
+| Pregunta | Por que importa |
 |---|---|
-| La escalera decodifica más rápido que Huffman | Huffman canónico usa LUT: **un** acceso a SRAM. La escalera usa `clz` + rama + shift + mask. Contando instrucciones puede perder. |
-| La tabla de 64 B mejora la ocupación | Plausible, pero la LUT de Huffman ya está diseñada para caber en SRAM. La ganancia puede ser nula. |
-| El cuello de botella es el decode | Casi seguro que **no**. Manda el ancho de banda y la dependencia serie dentro del bloque. |
+| Que pasa en una GPU con L2 grande | Todo lo anterior es Pascal con 1 MiB de L2. Ver seccion 4. |
+| Ocupacion real, stalls de warp, divergencia | Nsight Compute **no soporta Pascal**; no se ha podido medir aqui |
+| Comparacion contra los kernels publicados de DFloat11 | Solo se ha comparado contra implementacion propia |
+| tokens/s extremo a extremo (Fase 3) | "Kernel mas rapido" no es lo mismo que "inferencia mas rapida" |
+| Anomalia: con BLOCK=128 y entrada en shared, Huffman es 2x mas rapido que la escalera | Mucho mas de lo que justifica el 4,8% de diferencia de stream. Sin explicar. |
 
 ### Descartado (callejones sin salida ya recorridos)
 
-- **Comprimir el flujo de bits crudo en grupos de 3 o 4 bits.** Sobre los
-  pesos BF16 da entre −18% (expande) y +12,6% según configuración. Muy por
-  debajo de atacar el exponente.
-- **Índice de offsets por peso.** Cuesta ~800% del fichero. Inviable.
-- **Prefix-sum global para calcular offsets.** Problema huevo-gallina: para
-  sumar longitudes necesitas saber dónde empieza cada símbolo. La solución
-  es el índice grueso por bloques.
-- **Códigos no libres de prefijo.** Un intento previo usaba `100` y `1000`
-  a la vez. Indescifrable. Cualquier tabla nueva **debe** pasar Kraft ≤ 1.
+- **Comprimir el flujo de bits crudo en grupos de 3 o 4 bits.** Entre −18% y
+  +12,6%. Muy por debajo de atacar el exponente.
+- **Indice de offsets por peso.** Cuesta ~800% del fichero.
+- **Prefix-sum global de offsets.** Problema huevo-gallina; la solucion es el
+  indice grueso por bloques.
+- **Codigos no libres de prefijo.** Cualquier tabla nueva debe pasar Kraft <= 1.
+- **Codificacion vectorial / por pares.** Medido: no hay correlacion que
+  explotar (I < 0,01 bits) y para la escalera es peor que el codigo escalar.
+- **La escalera como via de rendimiento.** Pierde en compresion y en velocidad.
 
 ---
 
-## 2. Por qué el exponente
+## 2. El formato, tal como esta ahora
 
-BF16 = `[1 signo][8 exponente][7 mantisa]`.
-
-Entropías medidas sobre pesos sintéticos realistas:
-
-```
-signo     : 1,000 bits de 1   → nada que ganar
-exponente : 2,718 bits de 8   → 5,3 bits desperdiciados por peso
-mantisa   : 6,972 bits de 7   → nada que ganar
-```
-
-Solo aparecen **25 exponentes distintos** de 256 posibles. Tres de ellos
-concentran el 69,7% de los pesos. Ahí está todo el margen.
-
-Signo y mantisa se guardan crudos, empaquetados en 8 bits por peso en un
-array separado. No se tocan.
-
----
-
-## 3. Especificación del formato
-
-### 3.1 Código por niveles
-
-Lee unos hasta el primer cero. El número de unos selecciona el nivel.
-
-| Código | Bits | Contenido |
-|---|---|---|
-| `0` + 1 bit índice | 2 | símbolos 0–1 (los 2 más frecuentes) |
-| `10` + 1 bit índice | 3 | símbolos 2–3 |
-| `110` + 1 bit índice | 4 | símbolos 4–5 |
-| `1110` + 2 bits índice | 6 | símbolos 6–9 |
-| `1111` + 8 bits crudos | 12 | escape, cualquier otro exponente |
-
-Kraft: `2·2⁻² + 2·2⁻³ + 2·2⁻⁴ + 4·2⁻⁶ + 2⁻⁴ = 1,0000` exacto.
-
-Tabla concreta para el fichero de pruebas:
-
-| Código | Bits | Exponente | % |
-|---|---|---|---|
-| `00` | 2 | 120 | 28,10 |
-| `01` | 2 | 121 | 21,73 |
-| `100` | 3 | 119 | 19,84 |
-| `101` | 3 | 118 | 10,89 |
-| `1100` | 4 | 122 | 7,54 |
-| `1101` | 4 | 117 | 5,59 |
-| `111000` | 6 | 116 | 2,80 |
-| `111001` | 6 | 115 | 1,41 |
-| `111010` | 6 | 114 | 0,69 |
-| `111011` | 6 | 123 | 0,61 |
-| `1111`+8b | 12 | resto | 0,79 |
-
-La **forma** de la escalera es fija. Lo único que cambia entre modelos es
-qué exponente ocupa cada ranura: 10 bytes de cabecera.
-
-### 3.2 Decodificación
-
-```c
-// n = número de unos iniciales
-int n = clz(~(word << pos));   // una instrucción
-switch (n) {
-  case 0: sym = tabla[ 0 + bit(pos+1)      ]; len = 2;  break;
-  case 1: sym = tabla[ 2 + bit(pos+2)      ]; len = 3;  break;
-  case 2: sym = tabla[ 4 + bit(pos+3)      ]; len = 4;  break;
-  case 3: sym = tabla[ 6 + bits(pos+4, 2)  ]; len = 6;  break;
-  default: sym = bits(pos+4, 8);              len = 12; break;
-}
-```
-
-Sin árbol, sin bucle. La tabla son 10 bytes de símbolos.
-
-### 3.3 Layout del fichero
+BF16 = `[1 signo][8 exponente][7 mantisa]`. Signo y mantisa se guardan crudos,
+empaquetados en 1 byte por peso. Solo se codifica el exponente.
 
 ```
-cabecera        : magic, versión, n_pesos, BLOCK, 10 bytes de tabla
+cabecera        : magic, version, n_pesos, BLOCK, tabla de codigos
 sign_mantisa    : n_pesos bytes, crudos
-exponentes      : bitstream del código por niveles
-índice          : uint32 por bloque de BLOCK símbolos → offset en bits
+exponentes      : bitstream Huffman canonico
+indice          : ver abajo
 ```
 
-Tamaños sobre el fichero de pruebas (2.162.688 pesos, 4.325.376 B):
+**Indice (cambiado en la Fase 2c).** En vez de un offset absoluto uint32 por
+bloque (4 B/bloque):
 
-```
-exponentes      :   775.869 B
-signo+mantisa   : 2.162.688 B
-índice          :    33.792 B   (1,15%)
-tabla           :        64 B
------------------------------------
-TOTAL           : 2.972.325 B   →  31,28% de ahorro
-```
+- un **uint32 por superbloque** de 32 bloques (= un warp) -> 0,125 B/bloque
+- un **uint8 por bloque** con su longitud en bits, menos un minimo global
+  -> 1,0 B/bloque
 
-### 3.4 Paralelismo
+Total **1,125 B/bloque**. El offset de cada bloque se recupera con un
+prefix-sum exclusivo dentro del warp (5 pasos de `__shfl_up_sync`, coste no
+medible). Cabe en 8 bits porque la longitud de bloque tiene poco rango: con
+BLOCK=64, de 130 a 273 bits.
 
-El índice por bloques resuelve el huevo-gallina. Cada bloque de 256
-símbolos arranca en un offset conocido, así que **8.448 bloques se
-decodifican en paralelo** sin sincronización. Dentro del bloque es serie,
-pero son 256 símbolos.
-
-`BLOCK` es el parámetro a barrer: más grande → índice más pequeño pero
-menos paralelismo y cadenas serie más largas.
+**Limitacion:** solo llega hasta BLOCK=128. Con BLOCK=256 el rango es 409 y no
+cabe; haria falta la variante de 16 bits relativos (2,016 B/bloque).
 
 ---
 
-## 4. Ficheros
+## 3. Lo que aprendio el proyecto
 
-| Fichero | Qué es |
-|---|---|
-| `weights_bf16.bin` | 2.162.688 pesos BF16, 4,3 MB. Banco de pruebas. |
-| `gen_weights_bf16.py` | Genera el anterior. Semilla 1234, reproducible. |
-| `df11_reference.py` | Huffman canónico + índice de bloques. Baseline a batir. Roundtrip verificado. |
+Vale la pena decirlo explicitamente, porque es lo contrario de lo que se
+esperaba:
 
-`weights_bf16.bin` es **sintético**: 7 tensores gaussianos con escalas de
-0,009 a 0,030, más 0,3% de outliers a 8σ. Reproduce la entropía de
-exponente de los modelos reales (2,72 vs ~2,6 reportado), que es la
-propiedad que importa.
+> Los dos cambios **estructurales** (patron de acceso e indice) valen **2x de
+> velocidad y +2,24 puntos**. La pregunta sobre el **codigo de entropia**,
+> alrededor de la cual se construyo el proyecto entero, vale 0,85 puntos, y en
+> contra.
 
-**Primera tarea en el entorno nuevo: repetir todo sobre pesos reales.**
-Un `.safetensors` de cualquier modelo pequeño (Qwen3-0.6B, Llama-3.2-1B).
-Si la distribución del exponente cambia mucho, la escalera hay que
-recalcularla.
+La codificacion de entropia esta, a efectos practicos, terminada: Huffman se
+queda a 0,031 bits del suelo teorico y no hay correlacion que explotar. Todo
+el margen que queda es estructural.
 
----
+La duda que el handoff original ya planteaba resulto ser la correcta:
 
-## 5. Plan de pruebas
+> *"Huffman canonico usa LUT: un acceso a SRAM. La escalera usa `clz` + rama +
+> shift + mask. Contando instrucciones puede perder."*
 
-### Fase 1 — Validación en CPU
-
-1. Descargar un modelo real, extraer un tensor grande.
-2. Medir entropía del exponente. **Criterio: entre 2,4 y 3,0 bits.**
-3. Correr `df11_reference.py`. **Criterio: ≥28% de ahorro, roundtrip exacto.**
-4. Recalcular la asignación de la escalera para esa distribución.
-5. Implementar el codec de escalera. **Criterio: roundtrip exacto y a menos
-   de 1 punto de Huffman.**
-
-Si el paso 2 falla, la premisa se cae y hay que parar a repensar.
-
-### Fase 2 — Kernel GPU
-
-Dos kernels con interfaz idéntica: Huffman-LUT y escalera. Mismo índice de
-bloques, mismo layout, misma salida.
-
-Medir con Nsight Compute:
-
-- ciclos por símbolo decodificado
-- ocupación (warps activos / máximo)
-- bytes de SRAM por bloque
-- ancho de banda alcanzado vs pico
-
-**La pregunta que decide todo:** ¿el kernel está limitado por memoria o por
-cómputo? Si es por memoria, la escalera no aporta velocidad y su único
-argumento es el tamaño de tabla. Si es por cómputo, hay carrera.
-
-### Fase 3 — Integración
-
-Descomprimir antes del matmul, descartar después. Medir tokens/s con batch
-1, 8, 32 frente a BF16 sin comprimir.
-
-Referencia publicada: DFloat11 reporta ~2× más lento con batch 1, y la
-penalización se diluye al subir el batch porque el coste de descompresión
-es constante por forward pass.
-
-### Barridos
-
-- `BLOCK` ∈ {64, 128, 256, 512, 1024}
-- forma de la escalera: probar (1,1,1,2) contra (1,1,2,2) y (1,2,2,3)
-- ancho del índice: uint32 vs uint16 con offsets relativos al bloque
+Pierde.
 
 ---
 
-## 6. Riesgos
+## 4. Lo siguiente, por orden de valor
 
-**El más probable:** que la escalera no gane nada en velocidad y quede como
-una curiosidad 0,8% peor que Huffman. Sería un resultado válido y hay que
-estar dispuesto a aceptarlo.
+### 4.1 Medir en una GPU con L2 grande — BLOQUEANTE para publicar nada
 
-**Segundo:** que los pesos reales tengan una distribución de exponente
-distinta a la sintética. Se descubre en la fase 1, barato.
+Todo lo medido es Pascal con 1 MiB de L2. La cifra que gobierna el precipicio
+de BLOCK es la **L2 por hilo residente**:
 
-**Tercero:** que el coste de descompresión por forward pass haga el
-conjunto inviable fuera de escenarios con memoria muy justa. Es lo que ya
-le pasa a DFloat11 con batch pequeño.
+| tarjeta | L2 | SMs | hilos residentes | **L2 / hilo** |
+|---|---|---|---|---|
+| GTX 1050 Ti (la de casa) | 1 MB | 6 | 12.288 | 85 B |
+| RTX 3060 | 3 MB | 28 | 43.008 | 73 B |
+| A100 80GB | 40 MB | 108 | 221.184 | 190 B |
+| H100 SXM | 50 MB | 132 | 270.336 | 194 B |
+| RTX 4090 | 72 MB | 128 | 196.608 | 384 B |
+| RTX 4070 | 36 MB | 46 | 70.656 | 534 B |
 
-**Cuarto:** la rama del escape (`1111`) provoca divergencia de warp. Solo
-el 0,79% de los símbolos, pero en GPU un solo hilo divergente serializa el
-warp entero. Medirlo, no asumirlo.
+> **Prediccion registrada antes de medir:** en una tarjeta con L2 grande el
+> precipicio de BLOCK **deberia desaparecer**; con BLOCK=1024 el working set
+> residente son 24,5 MB (cabe en 36 MB de una 4070, no cabe en 1 MB). La
+> entrada en shared deberia dejar de importar, y BLOCK=512-1024 deberia pasar
+> a ser viable: la primera configuracion donde coinciden la mejor compresion y
+> buena velocidad.
+>
+> **Si el precipicio sigue ahi, la explicacion de la L2 es falsa** y hay que
+> reescribir la Fase 2b antes de que nada de esto salga del repo.
+
+Como hacerlo: [ALQUILER_GPU.md](ALQUILER_GPU.md) (~1,40 USD, menos de una
+hora) o las guias para operador con maquina prestada.
+
+### 4.2 Salida BF16 fusionada
+
+Hoy el kernel emite un byte de exponente por peso y hace falta una pasada
+aparte para mezclar signo+mantisa: 64 MB + 64 MB leidos y 128 MB escritos =
+**256 MB, casi 3x el propio kernel de decodificacion (88,7 MB)**. Fusionarla
+baja el trafico total del pipeline de ~345 MB a ~217 MB (−37%) y quita un
+lanzamiento entero. Necesario para la Fase 3 de todos modos.
+
+### 4.3 Indice de 16 bits para BLOCK >= 256
+
+El de 8 bits no llega. La variante relativa de 16 bits da 2,016 B/bloque
+(+1,94 puntos con BLOCK=256). Util si 4.1 confirma que BLOCK grande es viable.
+
+### 4.4 Huffman sobre pares
+
+Reduce a la mitad las iteraciones de la cadena serie, que es el cuello de
+botella real, y ademas es 0,0164 bits/simbolo mas pequeno. Coste: LUT de
+8 KiB. Especulativo pero barato de probar.
+
+### 4.5 Comparar contra DFloat11
+
+Esta publicado y trae kernels. Es la comparacion que cualquier revisor
+exigiria, y es la que mas trabajo cuesta.
 
 ---
 
-## 7. Estado del arte
+## 5. Trampas ya pisadas, para no repetirlas
 
-**DFloat11** (NeurIPS 2025, arXiv 2504.11651, github.com/LeanModels/DFloat11)
-hace exactamente esto: Huffman sobre los exponentes BF16, signo y mantisa
-intactos, ~30% de reducción con salidas bit a bit idénticas.
-
-Su kernel usa LUT jerárquicas en SRAM, un kernel de dos fases con variables
-auxiliares para coordinar lectura y escritura por hilo, y descompresión por
-bloque de transformer. Guardan un array de *gaps* con el offset en bits del
-primer elemento de cada hilo — equivalente al índice de bloques de aquí.
-
-**Esto no es competencia con DFloat11.** Es una variante del código de
-entropía dentro del mismo marco. La pregunta acotada es si un código por
-niveles con tabla de 64 bytes rinde mejor que una LUT jerárquica, aceptando
-0,8 puntos peor de compresión.
-
-Comparar contra su implementación directamente. Está publicada.
-
----
-
-## 8. Contexto de cómo se llegó aquí
-
-El diseño salió de razonar desde cero sobre teoría de la información:
-por qué los códigos de longitud variable rompen el paralelismo, por qué un
-índice por elemento no puede funcionar, por qué un índice grueso sí. Se
-reinventaron y descartaron RLE, coincidencia de bloques 2D y compresión vía
-codecs de imagen por hardware antes de llegar aquí.
-
-Las trampas ya pisadas, para no repetirlas:
-
-- Un código sin Kraft ≤ 1 es indescifrable, aunque parezca que funciona en
+- Un codigo sin Kraft <= 1 es indescifrable aunque parezca que funciona en
   algunos casos de prueba.
-- Los patrones frecuentes en texto ASCII no dicen nada sobre pesos.
 - Extrapolar un porcentaje de ahorro de un tipo de datos a otro no vale.
-- Una tabla plana desperdicia el sesgo: si un símbolo sale el 28% y otro el
-  10%, darles la misma longitud tira compresión a la basura.
+- Una tabla plana desperdicia el sesgo de la distribucion.
+- **Un `return` temprano antes de `__syncthreads()` es comportamiento
+  indefinido.** Costo salida incorrecta no determinista en la escalera con
+  BLOCK=512/1024. Todos los hilos del bloque deben llegar a la barrera.
+- **Verificar bit a bit ANTES de cronometrar, nunca despues.** Un kernel que
+  escribe fuera de su shared puede dar resultados casi correctos y un tiempo
+  halagador.
+- **No combinar optimizaciones sin medirlas por separado.** Entrada + salida
+  en shared es *peor* que solo salida: la entrada gasta shared y una barrera
+  sin comprar nada.
+- Los relojes de una GPU consumer no se pueden fijar bajo Windows/WDDM. Hay
+  que compensar con calentamiento sostenido, mediana y orden aleatorizado — y
+  cerrar todo lo que use la GPU.
+- Nsight Compute no soporta Pascal (retirado en 2020.1). No se puede perfilar
+  una 1050 Ti con ninguna version actual.
+
+---
+
+## 6. Estado del arte
+
+**DFloat11** (NeurIPS 2025, arXiv 2504.11651,
+github.com/LeanModels/DFloat11) hace lo mismo: Huffman sobre los exponentes
+BF16, signo y mantisa intactos, ~30% de reduccion bit a bit identica. Usa LUT
+jerarquicas en SRAM, kernel de dos fases y un array de *gaps* con el offset en
+bits de cada hilo — equivalente al indice de bloques de aqui.
+
+**Esto no es competencia con DFloat11.** Y su array de gaps tiene exactamente
+la estructura que el indice de 8 bits mejora, asi que la via de contribucion
+mas directa es abrir un issue o PR alli con esa medida.
