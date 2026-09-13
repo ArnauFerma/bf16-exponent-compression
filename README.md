@@ -97,8 +97,10 @@ decompressor are worthless.
 ## Authorship and tools
 
 **Author: Arnau Ferrerons Manich.** The hypothesis, the direction of the
-work, the decisions about what to measure and what to conclude, and all the
-GPU measurements are the author's.
+work, and the decisions about what to measure and what to conclude are the
+author's. The GPU measurements were run on the author's own hardware and,
+for the rented cards, on the author's account by Claude Code under the
+author's direction.
 
 **Claude Code (Anthropic) was used extensively throughout this project**: to
 implement the codecs, the CUDA kernels and the measurement harnesses, to run
@@ -108,10 +110,25 @@ commit carries a `Co-Authored-By` trailer and a link to the session in which
 it was produced, so the division of labour can be audited from the git
 history rather than taken on trust.
 
-Any error in the code, the numbers or the conclusions is the author's
-responsibility. Nothing here has been peer-reviewed. The measurements have
-not yet been reproduced by anyone else; [METHODOLOGY.md](METHODOLOGY.md)
-exists so that they can be.
+**Verification of what is written here.** Before publication, Claude Code
+was also used to audit the repository against its own evidence: every number
+in the documents was traced to the raw log or histogram it came from
+(`results/`), the whole-model figures were recomputed from the exact counts,
+the transcribed GPU tables were checked against a fresh replication on the
+same card, and every literature claim that supports a conclusion was checked
+against the primary text of the paper rather than a summary of it. That
+process found and corrected two errors of its own making — a duplicated
+tensor counted twice in every whole-model figure, and a claim about a
+competing method that a paper summary asserted and the paper does not — and
+both corrections are recorded where they apply. The intent is that nothing
+stated as measured is assumed, and nothing attributed to a source is
+paraphrased from memory; where a number could not be traced, the documents
+say so instead.
+
+Any remaining error in the code, the numbers or the conclusions is the
+author's responsibility. Nothing here has been peer-reviewed. The
+measurements have not yet been reproduced by anyone else;
+[METHODOLOGY.md](METHODOLOGY.md) exists so that they can be.
 
 ## License
 
