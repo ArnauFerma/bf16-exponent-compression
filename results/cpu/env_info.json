@@ -1,0 +1,7 @@
+{
+  "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+  "python": "3.12.3",
+  "numpy": "2.5.3",
+  "cupy": null,
+  "nvidia_driver": null
+}

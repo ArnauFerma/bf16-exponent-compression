@@ -1,6 +1,6 @@
 # Prueba de kernels CUDA en la RTX 4070 — paso a paso
 
-Hola David. Gracias por prestar la maquina.
+Hola. Gracias por prestar la maquina.
 
 Es un experimento de **compresion sin perdidas de pesos de modelos de IA**.
 Hay dos formas de codificar y hay que medir cual va mas rapida en GPU. Tu

@@ -1,0 +1,10 @@
+tensores: 311   dtypes presentes: ['BF16']
+
+tensores omitidos por ser copia exacta de otro (1):
+  model.embed_tokens.weight  ==  lm_head.weight   (155,582,464 pesos)
+
+pesos BF16 extraidos : 596,049,920   (1,192,099,840 bytes)
+exponentes distintos : 43
+entropia exponente   : 2.6450 bits
+
+escrito: outputs/real_weights_bf16.bin  y  outputs/real_exp_counts.npy

@@ -1,29 +1,41 @@
 # Phase 1 — CPU validation: results
 
-Run on real **Qwen/Qwen3-0.6B** weights (`model.safetensors`, 751,632,384
-native BF16 weights, `torch_dtype: bfloat16` confirmed in `config.json`). All
-Phase 1 criteria from the HANDOFF are met.
+Run on real **Qwen/Qwen3-0.6B** weights (`model.safetensors`, `torch_dtype:
+bfloat16` confirmed in `config.json`). The file holds 751,632,384 BF16 values,
+but `lm_head.weight` is a bit-identical copy of `model.embed_tokens.weight`
+(tied embeddings, stored twice); the extractor drops the duplicate and every
+number below is over the **596,049,920 unique weights**. All Phase 1 criteria
+from the HANDOFF are met.
+
+> **Re-run 2026-09-13.** The first version of this phase counted the
+> duplicated tensor (751.6M weights). The whole-model figures moved by at most
+> 0.1 points (entropy 2.634 -> 2.645, Huffman 32.56% -> 32.48%, ladder gap
+> 0.85 -> 0.86); the conclusions did not. The original tables are in git
+> history before this date. The GPU phases below are unaffected: their timing
+> sample (the first 64M weights) is the embedding matrix in both layouts, and
+> the Huffman table change alters that sample's stream by 843 bits out of
+> 165 million.
 
 ## Criteria (Section 5, Phase 1)
 
 | Step | Criterion | Result |
 |---|---|---|
-| 2. Exponent entropy | between 2.4 and 3.0 bits | **2.634 bits** ✓ |
-| 3. Canonical Huffman (`df11_reference.py`) | >=28% saving, exact roundtrip | **32.56%** saving, bit-exact roundtrip **YES** ✓ |
+| 2. Exponent entropy | between 2.4 and 3.0 bits | **2.645 bits** ✓ |
+| 3. Canonical Huffman (`df11_reference.py`) | >=28% saving, exact roundtrip | **32.48%** saving, bit-exact roundtrip **YES** ✓ |
 | 4. Reassign ladder to the real distribution | — | done, 43 distinct symbols (vs 25 synthetic) |
-| 5. Ladder codec | exact roundtrip, <1 point from Huffman | roundtrip **YES**, gap = **0.85 points** ✓ |
+| 5. Ladder codec | exact roundtrip, <1 point from Huffman | roundtrip **YES**, gap = **0.86 points** ✓ |
 
 ## Huffman vs ladder comparison (BLOCK=256, uint32 index)
 
 | | Synthetic (seed 1234) | Real (Qwen3-0.6B) |
 |---|---|---|
-| weights | 2,162,688 | 751,632,384 |
+| weights | 2,162,688 | 596,049,920 |
 | distinct exponents | 25 | 43 |
-| exponent entropy | 2.7182 bits | 2.6340 bits |
-| canonical Huffman | 31.98% | **32.56%** |
-| Ladder (1,1,1,2) | 31.28% (−0.69 pts) | **31.72%** (−0.85 pts) |
-| Ladder (1,1,2,2) | 30.92% (−1.05 pts) | 31.52% (−1.05 pts) |
-| Ladder (1,2,2,3) | 29.95% (−2.03 pts) | 30.18% (−2.38 pts) |
+| exponent entropy | 2.7182 bits | 2.6450 bits |
+| canonical Huffman | 31.98% | **32.48%** |
+| Ladder (1,1,1,2) | 31.28% (−0.69 pts) | **31.62%** (−0.86 pts) |
+| Ladder (1,1,2,2) | 30.92% (−1.05 pts) | 31.42% (−1.06 pts) |
+| Ladder (1,2,2,3) | 29.95% (−2.03 pts) | 30.07% (−2.41 pts) |
 
 The **(1,1,1,2)** shape from the handoff is still the best of the three tried,
 on both synthetic and real data. Real weights are *more* concentrated (lower
@@ -35,11 +47,11 @@ slot changes (the 10-byte header).
 
 | BLOCK | blocks | index | % overhead | total reduction |
 |---|---|---|---|---|
-| 64 | 11,744,256 | 44.8 MB | 4.43% | 29.37% |
-| 128 | 5,872,128 | 22.4 MB | 2.26% | 30.93% |
-| 256 | 2,936,064 | 11.2 MB | 1.14% | 31.72% |
-| 512 | 1,468,032 | 5.6 MB | 0.58% | 32.11% |
-| 1024 | 734,016 | 2.8 MB | 0.29% | 32.30% |
+| 64 | 9,313,280 | 35.5 MB | 4.42% | 29.28% |
+| 128 | 4,656,640 | 17.8 MB | 2.26% | 30.84% |
+| 256 | 2,328,320 | 8.9 MB | 1.14% | 31.62% |
+| 512 | 1,164,160 | 4.4 MB | 0.58% | 32.01% |
+| 1024 | 582,080 | 2.2 MB | 0.29% | 32.21% |
 
 Confirms the handoff's trade-off: raising `BLOCK` reduces index overhead but
 lengthens the serial decode chain within each block (more symbols to decode in
@@ -49,21 +61,21 @@ sequence per thread/warp).
 
 - **Compressed size**: computed **analytically** (`Σ counts[s] · length[s]`)
   over exact exponent counts for the whole file — not an estimate, it is
-  exact, but it avoids building the 751M-symbol bitstream in pure Python
+  exact, but it avoids building the 596M-symbol bitstream in pure Python
   (infeasible in reasonable time without GPU/Cython).
 - **Bit-exact roundtrip**: verified on a **random sample of 2,000,000 symbols**
   (with replacement, `outputs/real_weights_bf16.bin` via `np.memmap` to avoid
-  loading 1.5 GB into RAM), using the code table derived from the **complete**
+  loading 1.2 GB into RAM), using the code table derived from the **complete**
   distribution. A prefix code is memoryless per symbol, so this proves codec
   correctness just as well as encoding the entire file — the sample hit the
-  escape path 9,652 times, so that branch is covered too.
-- `real_exp_counts.npy` stores the exact counts for all 751.6M weights so the
+  escape path 10,165 times, so that branch is covered too.
+- `real_exp_counts.npy` stores the exact counts for all 596.0M weights so the
   `.safetensors` (1.4 GB) does not have to be re-read on later runs.
 
 ## Discarded / observed
 
 - The environment has little RAM (3.5 GiB + 3.5 GiB swap). Loading the whole
-  `.safetensors` (a 1.5 GB `f.read()`) or concatenating a 751M `uint16` array
+  `.safetensors` (a 1.5 GB `f.read()`) or concatenating a 596M `uint16` array
   in one go kills the process (OOM, exit 137). Extraction had to stream tensor
   by tensor, writing straight to disk and accumulating counts incrementally.
 
@@ -86,10 +98,10 @@ github.com/LeanModels/DFloat11, which does ship kernels).
 |---|---|
 | `ladder_codec.py` | Generic ladder codec (any `rung_bits`), with real bitstream encode/decode and Kraft verification. Includes a self-test. |
 | `bench.py` | Test harness: Huffman vs ladder, synthetic and real, shape and `BLOCK` sweeps, sampled roundtrip. Produces `outputs/bench_results.json`. |
-| `outputs/real_weights_bf16.bin` | 751,632,384 raw BF16 weights extracted from Qwen3-0.6B (all tensors, 1.4 GB). |
+| `outputs/real_weights_bf16.bin` | 596,049,920 raw BF16 weights extracted from Qwen3-0.6B (all tensors, duplicate `lm_head` dropped, 1.2 GB). |
 | `outputs/real_exp_counts.npy` | Exact per-exponent counts (256,) for the above file. |
-| `outputs/bench_results.json` | Complete numeric results from `bench.py`. |
-| `outputs/bench_log.txt` | Console log of the last `bench.py` run. |
+| `outputs/bench_results.json` | Complete numeric results from `bench.py`. Committed copy: `results/cpu/`. |
+| `outputs/bench_log.txt` | Console log of the last `bench.py` run. Committed copy: `results/cpu/`, with the extractor log and `env_info.json`. |
 | `real_model/` | `model.safetensors` + `config.json` for Qwen3-0.6B, downloaded from Hugging Face. |
 
 ---
@@ -160,7 +172,7 @@ There are two regimes and they point in opposite directions:
   terms**. Nobody would use them.
 
 In other words: **risk #1 from the handoff materialized.** On this hardware the
-ladder ends up a curiosity, 0.85 points worse on compression with no speed
+ladder ends up a curiosity, 0.86 points worse on compression with no speed
 compensation. The handoff said explicitly that this would be a valid result; it
 is.
 
@@ -171,7 +183,7 @@ hardware.** Peak is 112.1 GB/s; the best configuration achieves **9.1 GB/s,
 8.2% of peak**. Each thread walks its own region, so a warp scatters into 32
 independent streams. There is ~10x of headroom on the table, available to
 **both** codecs, by attacking the access pattern (warp-level cooperative
-decoding, vectorized loads). That prize is far larger than the 0.85 points
+decoding, vectorized loads). That prize is far larger than the 0.86 points
 separating the two codes.
 
 **2. Output dominates the traffic.** At BLOCK=64, 88.7 MB moves, of which
@@ -268,12 +280,14 @@ That is now **two independent lines of evidence** for the same explanation.
 
 | BLOCK | best ms | compression |
 |---|---|---|
-| 64 | 5.07 | 29.37% |
-| 128 | 9.26 | 30.93% |
-| 256 | 13.05 | 31.72% |
+| 64 | 5.07 | 29.28% |
+| 128 | 9.26 | 30.84% |
+| 256 | 13.05 | 31.62% |
+
+(Compression is the whole-model ladder figure from Phase 1, uint32 index.)
 
 Tension remains, but far less brutal: BLOCK=256 used to be 6x slower than
-BLOCK=64, now it is 2.6x in exchange for 2.35 more points of compression.
+BLOCK=64, now it is 2.6x in exchange for 2.34 more points of compression.
 
 ## Huffman vs ladder, redone with the optimized kernel
 
@@ -292,7 +306,7 @@ means the comparison must be **redone**, not extrapolated.
 2.02x faster than Phase 2's best (9.70 ms).
 
 The optimization **reinforces** Phase 2's conclusion rather than overturning
-it. The ladder now loses on **both axes**: 0.85 points worse compression *and*
+it. The ladder now loses on **both axes**: 0.86 points worse compression *and*
 5% to 43% slower. Before, it at least won in the compute-bound regime.
 
 And this is the regime where it should have won: at 16.5% of peak, compute
@@ -346,15 +360,19 @@ should be where it shows most. This was measured rather than argued.
 
 The possible gain has **two sources** worth separating:
 
-**(a) Code redundancy.** Huffman sits at 2.5832 bits against an entropy of
-2.5520: **0.0312 bits/symbol** of headroom. No entropy coder — vector,
+**(a) Code redundancy.** On the 64M timing sample, Huffman sits at 2.5832 bits
+against an entropy of 2.5520: **0.0312 bits/symbol** of headroom (on the whole
+model the pair is 2.678 vs 2.645, a 0.033 gap; here Huffman is built on the
+sample's own histogram, hence 2.5832 rather than the 2.5838 the full-model
+table gives on this sample). No entropy coder — vector,
 arithmetic, ANS — can beat that bound if the symbols are independent.
 
 **(b) Correlation between neighbouring exponents.** This is **not** bounded by
 (a): it would be new headroom. And it is an empirical question.
 
 Measured over six windows spread across the whole model (not just the first 64M
-weights, which are `embed_tokens` and could mislead):
+weights, which are the embedding matrix and could mislead; offsets refer to
+the file as extracted before the duplicate `lm_head` was dropped):
 
 | offset | H(X) | H(Y given X) | I(X;Y) |
 |---|---|---|---|
@@ -417,6 +435,10 @@ prefix-sum within the warp (5 steps of `__shfl_up_sync`).
 | 128 | huffman | uint32 | 8.74 | 4.000 | 32.29% | |
 | 128 | huffman | uint8+ps | 8.77 | 1.125 | 33.41% | +1.12 pts |
 
+Compression percentages are for the 64M sample; the "pts" column is computed
+from unrounded values, which is why the Huffman row shows +2.25 while the two
+rounded percentages differ by 2.24.
+
 **The prefix-sum costs nothing measurable** (4.82 vs 4.81 ms, within noise):
 five `__shfl_up_sync` are invisible next to a chain of 64 dependent loads.
 Index traffic drops from 4 MB to 1.125 MB.
@@ -428,15 +450,15 @@ model:
 
 | | fastest config | best compression |
 |---|---|---|
-| before | BLOCK=64 -> 30.22% | BLOCK=1024 -> 33.15%, but **32x slower** |
-| after | BLOCK=64 -> **32.46%** | BLOCK=1024 -> 33.15% |
+| before | BLOCK=64 -> 30.14% | BLOCK=1024 -> 33.07%, but **32x slower** |
+| after | BLOCK=64 -> **32.39%** | BLOCK=1024 -> 33.07% |
 
 The distance between "fast" and "compresses well" goes from 2.93 points to
-0.69. There is no longer a choice to make.
+0.68. There is no longer a choice to make.
 
 **Best global configuration: Huffman, BLOCK=64, 128 threads, output in shared,
 8-bit index — 4.82 ms and 32.97%.** Against the Phase 2 reference (9.70 ms,
-30.73%): **2.01x faster and +2.24 points**, from two changes that touch neither
+30.73%): **2.01x faster and +2.25 points**, from two changes that touch neither
 the entropy code nor the decode loop.
 
 ### Limitation
@@ -448,12 +470,12 @@ exception rather than truncating silently. Larger blocks need the relative
 
 ## Taken together
 
-The two **structural** changes are worth 2.24 points and 2x in speed. The
-entropy-code question around which the whole project was built is worth 0.85
+The two **structural** changes are worth 2.25 points and 2x in speed. The
+entropy-code question around which the whole project was built is worth 0.86
 points, and in the wrong direction. The index and the memory layout mattered
 enormously more than Huffman-versus-ladder.
 
-Entropy coding is, for practical purposes, finished: Huffman lands 0.031 bits
+Entropy coding is, for practical purposes, finished: Huffman lands 0.033 bits
 from the theoretical floor and there is no correlation to exploit. All
 remaining headroom is structural.
 

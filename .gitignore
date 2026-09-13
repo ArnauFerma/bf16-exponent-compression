@@ -10,3 +10,5 @@ ncu_out/
 portable_bundle.tar.gz
 resultados/
 resultados.tar.gz
+# Nsight CSVs carry the process path (may include a user name); scrub before committing
+results/*/ncu_out/

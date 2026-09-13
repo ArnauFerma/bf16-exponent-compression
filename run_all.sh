@@ -3,8 +3,14 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 PY=./.venv/bin/python
-OUT=resultados
+# results/<gpu-name>/, e.g. results/gtx1050ti/, results/a100/
+SLUG=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -1 \
+       | sed -E 's/NVIDIA |GeForce |Tesla //g; s/[^A-Za-z0-9]//g' | tr 'A-Z' 'a-z')
+OUT=results/${SLUG:-unknown-gpu}
 mkdir -p $OUT
+
+echo "== entorno =="
+$PY env_info.py $OUT/env_info.json
 
 echo "== intentando fijar relojes de la GPU =="
 # En Linux esto suele funcionar en tarjetas consumer (en Windows/WDDM no).
@@ -41,7 +47,7 @@ fi
 
 cp outputs/gpu_bench.json $OUT/ 2>/dev/null || true
 echo -e "\n== recogiendo resultados =="
-tar czf resultados.tar.gz $OUT
+tar czf resultados.tar.gz -C results "$(basename $OUT)"
 echo "LISTO -> resultados.tar.gz  (mandar este fichero)"
 
 if sudo -n true 2>/dev/null; then sudo nvidia-smi -rgc || true; fi

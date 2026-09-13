@@ -3,10 +3,17 @@
 $ErrorActionPreference = "Continue"
 Set-Location $PSScriptRoot
 $py = ".\.venv\Scripts\python.exe"
-$OUT = "resultados"
+# results\<gpu-name>\, e.g. results\gtx1050ti\
+$name = (nvidia-smi --query-gpu=name --format=csv,noheader | Select-Object -First 1)
+$slug = (($name -replace 'NVIDIA |GeForce |Tesla ', '') -replace '[^A-Za-z0-9]', '').ToLower()
+if (-not $slug) { $slug = "unknown-gpu" }
+$OUT = "results\$slug"
 New-Item -ItemType Directory -Force $OUT | Out-Null
 
-Write-Host "== GPU ==" -ForegroundColor Cyan
+Write-Host "== entorno ==" -ForegroundColor Cyan
+& $py env_info.py "$OUT\env_info.json"
+
+Write-Host "`n== GPU ==" -ForegroundColor Cyan
 nvidia-smi --query-gpu=name,clocks.sm,clocks.max.sm,memory.used --format=csv |
     Tee-Object -FilePath "$OUT\gpu_info.txt"
 
@@ -51,5 +58,5 @@ Copy-Item -Force outputs\gpu_bench.json "$OUT\" -ErrorAction SilentlyContinue
 
 Write-Host "`n== empaquetando ==" -ForegroundColor Cyan
 if (Test-Path resultados.zip) { Remove-Item resultados.zip -Force }
-Compress-Archive -Path $OUT -DestinationPath resultados.zip
+Compress-Archive -Path "$OUT\*" -DestinationPath resultados.zip
 Write-Host "LISTO -> resultados.zip   (mandar este fichero)" -ForegroundColor Green

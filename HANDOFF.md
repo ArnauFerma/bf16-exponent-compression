@@ -24,14 +24,15 @@ is speculated.
 
 ### Measured and reproducible
 
-Unless stated otherwise, on real **Qwen3-0.6B** (751,632,384 BF16 weights) and,
+Unless stated otherwise, on real **Qwen3-0.6B** (596,049,920 unique BF16
+weights; the duplicated `lm_head` is dropped, see METHODOLOGY.md) and,
 for the kernels, a sample of 64M exponents on a **GTX 1050 Ti**.
 
 | Claim | Value | How it was verified |
 |---|---|---|
-| Exponent entropy | 2.634 bits | Exact count over 751.6M weights |
-| Canonical Huffman | 2.665 bits/exp -> 32.56% | Codec implemented, bit-exact roundtrip |
-| Ladder (1,1,1,2) | 2.800 bits/exp -> 31.72% | Same, −0.85 points |
+| Exponent entropy | 2.645 bits | Exact count over 596.0M weights |
+| Canonical Huffman | 2.678 bits/exp -> 32.48% | Codec implemented, bit-exact roundtrip |
+| Ladder (1,1,1,2) | 2.815 bits/exp -> 31.62% | Same, −0.86 points |
 | Both GPU kernels | bit-exact roundtrip correct | 32M real symbols, 20 BLOCK x threads combinations |
 | **The decoder is NOT compute-bound** | 8.2% of peak bandwidth | "Memory floor" kernel with the same traffic |
 | Coalescing the **output** | **1.92x** | 4 variants compiled to attribute the gain |
@@ -116,10 +117,10 @@ does not fit; that would need the relative 16-bit variant (2.016 B/block).
 Worth stating explicitly, because it is the opposite of what was expected:
 
 > The two **structural** changes (access pattern and index) are worth **2x in
-> speed and +2.24 points**. The **entropy code** question, around which the
-> entire project was built, is worth 0.85 points — and in the wrong direction.
+> speed and +2.25 points**. The **entropy code** question, around which the
+> entire project was built, is worth 0.86 points — and in the wrong direction.
 
-Entropy coding is, for practical purposes, finished here: Huffman lands 0.031
+Entropy coding is, for practical purposes, finished here: Huffman lands 0.033
 bits from the theoretical floor and there is no correlation left to exploit.
 All remaining headroom is structural.
 
@@ -184,7 +185,7 @@ rate the field split gives away — only that it gives away >= 0.
 
 Two outcomes, both useful:
 
-- **≈0** — the field split costs nothing, 10.806 bits/weight really is near the
+- **≈0** — the field split costs nothing, 10.818 bits/weight really is near the
   true floor for this model, and that can be stated with a measurement behind
   it instead of an assumption.
 - **non-zero** — it is the exact size of the headroom needed to match a
@@ -312,12 +313,12 @@ What genuinely differs, in order of relevance to us:
 
 Tempting misreading to avoid. They report BF16 *"effective entropy of only
 10-12 bits"* and *"about 4-5 bits of redundancy, corresponding to a potential
-1.5x reduction"*. Ours is 10.806 bits/weight achieved (8 raw + 2.665 exponent +
+1.5x reduction"*. Ours is 10.818 bits/weight achieved (8 raw + 2.678 exponent +
 0.141 index). Those brackets overlap, but the comparison does not hold:
 
 - **Different models.** Ours is Qwen3-0.6B; they test Qwen-1.5B through
   Llama-405B. A 0.6B model being more compressible is unremarkable.
-- **Entropy vs achieved.** Their 10-12 bits is a floor; our 10.806 is a result.
+- **Entropy vs achieved.** Their 10-12 bits is a floor; our 10.818 is a result.
 - **Decisive: they treat BF16 as a monolithic 16-bit alphabet**, we code fields
   separately. By subadditivity a full-alphabet coder can never be worse on
   rate, so on the same model they would land at or below our floor. **Their
@@ -325,7 +326,7 @@ Tempting misreading to avoid. They report BF16 *"effective entropy of only
   much that costs us.
 
 What can honestly be claimed is narrower and still worth stating: we are
-**0.031 bits from the theoretical floor of exponent-only BF16 coding**. That is
+**0.033 bits from the theoretical floor of exponent-only BF16 coding**. That is
 a completeness result about this approach, not a state-of-the-art claim. And
 rate was never the contested axis — they are up to 11x faster.
 
@@ -368,8 +369,8 @@ choice of entropy code was worth almost nothing.
    overlaps decompression with tensor-core computation"*, with tile-alignment
    worth x3.3-8.2 and double-buffering on top (x4.0-10.1 total over naive).
    ANS makes tile granularity affordable; it is not what makes it fast.
-5. So the case for switching to ANS **here** is weak. Our exponents are 2.634
-   bits of entropy and Huffman delivers 2.665 — **98.8% efficiency** — so the
+5. So the case for switching to ANS **here** is weak. Our exponents are 2.645
+   bits of entropy and Huffman delivers 2.678 — **98.8% efficiency** — so the
    Shannon-gap argument buys almost nothing (it is strong for INT4/FP4, where
    gaps run 6-10x). The plausible move is to **keep canonical Huffman and go
    after fusion**, optionally borrowing the interleaved-stream layout for

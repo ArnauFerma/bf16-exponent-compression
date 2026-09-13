@@ -149,6 +149,7 @@ ayuda:
 
 Los ficheros a mirar dentro de `resultados.tar.gz`:
 
+- `env_info.json` — versiones y tarjeta, sin datos de la maquina ni de la cuenta.
 - `1_bench_base.txt` — el barrido de BLOCK. **Es el que contesta la pregunta.**
 - `2_bench_opt.txt` — atribucion: si `smem in=1` deja de ganar con BLOCK=256,
   la explicacion de la L2 queda confirmada.

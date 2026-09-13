@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use this work, please cite it as below."
+title: "Lossless BF16 weight compression: entropy code vs. memory layout, a measured refutation"
+type: software
+authors:
+  - family-names: "Ferrerons Manich"
+    given-names: "Arnau"
+repository-code: "https://github.com/FixemBCN/bf16-exponent-compression"
+date-released: 2026-09-13
+abstract: >-
+  Lossless compression of BF16 model weights by entropy-coding the exponent
+  field, in the same family as DFloat11. Tests the hypothesis that a small
+  "ladder" prefix code beats canonical Huffman on GPU decode speed; measures
+  that it does not, and that the memory access pattern and the block index
+  dominate decoder performance instead. Includes CUDA kernels, measurement
+  harnesses and a full methodology.
+keywords:
+  - lossless compression
+  - bfloat16
+  - entropy coding
+  - Huffman
+  - CUDA
+  - LLM weights
+  - negative result
+license: MIT
