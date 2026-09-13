@@ -1,0 +1,28 @@
+python.exe : <redacted> UserWarning: CUDA path could 
+not be detected. Set CUDA_PATH environment variable if CuPy fails to load.
+En <redacted> 41 Carácter: 1
++ & $py bench_idx8.py 64000000 2>&1 | Tee-Object -FilePath "$OUT\4_benc ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (<redacted> fails to load.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  warnings.warn(
+simbolos: 64,000,000
+
+ BLOCK  thr    codec    indice |       ms    GB/s |  B/bloque compresion | ok
+-----------------------------------------------------------------------------
+    64  128  huffman    uint32 |    5.11   17.34 |     4.000     30.73% | si
+    64  128  huffman  uint8+ps |    4.85   17.68 |     1.125     32.97% | si   (1.053x tiempo, +2.25 pts)
+    64  128   ladder    uint32 |    5.11   17.56 |     4.000     29.94% | si
+    64  128   ladder  uint8+ps |    5.14   16.87 |     1.125     32.19% | si   (0.993x tiempo, +2.25 pts)
+
+   128  128  huffman    uint32 |    8.81    9.84 |     4.000     32.29% | si
+   128  128  huffman  uint8+ps |    8.84    9.64 |     1.125     33.41% | si   (0.996x tiempo, +1.12 pts)
+   128  128   ladder    uint32 |    9.81    8.94 |     4.000     31.51% | si
+   128  128   ladder  uint8+ps |   10.29    8.38 |     1.125     32.63% | si   (0.953x tiempo, +1.12 pts)
+
+   256  128  huffman    uint32 |   13.52    6.34 |     4.000     33.07% | si
+   256  128  huffman     uint8 |  rango de longitud de bloque 409 > 255; con BLOCK=256 no cabe en 8 bits
+   256  128   ladder    uint32 |   18.69    4.64 |     4.000     32.29% | si
+   256  128   ladder     uint8 |  rango de longitud de bloque 409 > 255; con BLOCK=256 no cabe en 8 bits
+

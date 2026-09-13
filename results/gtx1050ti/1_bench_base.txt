@@ -1,0 +1,36 @@
+python.exe : <redacted> UserWarning: CUDA path could 
+not be detected. Set CUDA_PATH environment variable if CuPy fails to load.
+En <redacted> 32 Carácter: 1
++ & $py bench_gpu.py 64000000 2>&1 | Tee-Object -FilePath "$OUT\1_bench ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (<redacted> fails to load.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  warnings.warn(
+GPU: NVIDIA GeForce GTX 1050 Ti  SMs=6  pico=112.1 GB/s  (reloj no fijable: consumer/WDDM + escritorio activo)
+
+simbolos: 64,000,000 (Qwen3-0.6B real)
+  huffman  regs/hilo= 21  shared= 4096 B
+  ladder   regs/hilo= 15  shared=   16 B
+  huffman    19.71 MiB  (2.5838 bits/simbolo)
+  ladder     20.67 MiB  (2.7089 bits/simbolo)
+
+ BLOCK  thr |   huff ms  ladd ms   suelo |   ciclos/simbolo |  h/suelo l/suelo    l/h
+-------------------------------------------------------------------------------------
+    64   64 |    9.68±  0   9.79±  0   9.57 | h=  1.5 l=  1.6 |     1.01    1.02  1.012
+    64  128 |    9.70±  0   9.75±  0   9.57 | h=  1.6 l=  1.6 |     1.01    1.02  1.006
+    64  256 |    9.68±  0   9.73±  0   9.58 | h=  1.6 l=  1.5 |     1.01    1.02  1.005
+   128   64 |   28.78±  2  34.86±  1  12.78 | h=  4.6 l=  5.5 |     2.25    2.73  1.212
+   128  128 |   52.11±  1  34.96±  1  12.77 | h=  8.3 l=  5.6 |     4.08    2.74  0.671
+   128  256 |   50.43±  3  36.22±  1  12.82 | h=  8.1 l=  5.8 |     3.94    2.83  0.718
+   256   64 |   70.58±  4  58.36±  1  13.27 | h= 11.2 l=  9.3 |     5.32    4.40  0.827
+   256  128 |   84.86±  0  58.22±  1  13.35 | h= 13.5 l=  9.3 |     6.36    4.36  0.686
+   256  256 |   85.28±  1  58.36±  1  13.48 | h= 13.6 l=  9.3 |     6.33    4.33  0.684
+   512   64 |   97.26±  3  90.60±  1  16.21 | h= 15.6 l= 14.5 |     6.00    5.59  0.932
+   512  128 |  121.08±  1  91.19±  1  16.42 | h= 19.4 l= 14.6 |     7.37    5.55  0.753
+   512  256 |  122.65±  1  92.49±  0  16.37 | h= 19.6 l= 14.8 |     7.49    5.65  0.754
+  1024   64 |  143.95±  2 121.92±  0  20.26 | h= 22.9 l= 19.4 |     7.11    6.02  0.847
+  1024  128 |  157.16±  1 122.29±  1  20.36 | h= 25.0 l= 19.4 |     7.72    6.01  0.778
+  1024  256 |  158.27±  1 123.13±  1  20.63 | h= 25.2 l= 19.6 |     7.67    5.97  0.778
+
+guardado en outputs/gpu_bench.json   (ms = mediana de 11, ± IQR)

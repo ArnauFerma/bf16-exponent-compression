@@ -1,0 +1,98 @@
+python.exe : <redacted> UserWarning: CUDA path could 
+not be detected. Set CUDA_PATH environment variable if CuPy fails to load.
+En <redacted> 35 Carácter: 1
++ & $py bench_opt.py 64000000 2>&1 | Tee-Object -FilePath "$OUT\2_bench ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (<redacted> fails to load.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  warnings.warn(
+simbolos: 64,000,000
+
+ BLOCK  thr               variante   shared        ms    GB/s  vs base  ok
+--------------------------------------------------------------------------
+    64   32          base (global)        -     9.69    9.25     1.00  si
+    64   32        smem in=1 out=0     972B     9.71    9.24    1.00x  si
+    64   32        smem in=0 out=1    2048B     5.62   15.94    1.72x  si
+    64   32        smem in=1 out=1    3020B     6.24   14.38    1.55x  si
+    64   64          base (global)        -     9.81    9.14     1.00  si
+    64   64        smem in=1 out=0    1936B     9.68    9.27    1.01x  si
+    64   64        smem in=0 out=1    4096B     5.11   17.56    1.92x  si
+    64   64        smem in=1 out=1    6032B     6.37   14.09    1.54x  si
+    64  128          base (global)        -     9.82    9.14     1.00  si
+    64  128        smem in=1 out=0    3724B     9.73    9.21    1.01x  si
+    64  128        smem in=0 out=1    8192B     5.11   17.56    1.92x  si
+    64  128        smem in=1 out=1   11916B     6.64   13.50    1.48x  si
+    64  256          base (global)        -     9.80    9.15     1.00  si
+    64  256        smem in=1 out=0    7096B     9.71    9.24    1.01x  si
+    64  256        smem in=0 out=1   16384B     5.25   17.08    1.87x  si
+    64  256        smem in=1 out=1   23480B     6.72   13.34    1.46x  si
+
+   128   32          base (global)        -    13.14    6.67     1.00  si
+   128   32        smem in=1 out=0    1936B    12.92    6.79    1.02x  si
+   128   32        smem in=0 out=1    4096B     9.31    9.42    1.41x  si
+   128   32        smem in=1 out=1    6032B    12.10    7.25    1.09x  si
+   128   64          base (global)        -    34.84    2.52     1.00  si
+   128   64        smem in=1 out=0    3724B    26.93    3.26    1.29x  si
+   128   64        smem in=0 out=1    8192B     9.33    9.39    3.73x  si
+   128   64        smem in=1 out=1   11916B    12.15    7.21    2.87x  si
+   128  128          base (global)        -    34.98    2.51     1.00  si
+   128  128        smem in=1 out=0    7096B    31.11    2.82    1.12x  si
+   128  128        smem in=0 out=1   16384B     9.82    8.93    3.56x  si
+   128  128        smem in=1 out=1   23480B    12.24    7.17    2.86x  si
+   128  256          base (global)        -    36.29    2.42     1.00  si
+   128  256        smem in=1 out=0   12712B    34.33    2.55    1.06x  si
+   128  256        smem in=0 out=1   32768B    10.95    8.00    3.31x  si
+   128  256        smem in=1 out=1   45480B    12.27    7.15    2.96x  si
+
+   256   32          base (global)        -    27.64    3.14     1.00  si
+   256   32        smem in=1 out=0    3724B    13.11    6.61    2.11x  si
+   256   32        smem in=0 out=1    8192B    14.59    5.94    1.89x  si
+   256   32        smem in=1 out=1   11916B    17.48    4.96    1.58x  si
+   256   64          base (global)        -    58.64    1.48     1.00  si
+   256   64        smem in=1 out=0    7096B    13.16    6.59    4.46x  si
+   256   64        smem in=0 out=1   16384B    17.53    4.94    3.34x  si
+   256   64        smem in=1 out=1   23480B    17.91    4.84    3.27x  si
+   256  128          base (global)        -    60.91    1.42     1.00  si
+   256  128        smem in=1 out=0   12712B    13.67    6.34    4.46x  si
+   256  128        smem in=0 out=1   32768B    18.69    4.64    3.26x  si
+   256  128        smem in=1 out=1   45480B    17.96    4.83    3.39x  si
+   256  256          base (global)        -    59.32    1.46     1.00  si
+   256  256        smem in=1 out=0   24160B    14.07    6.16    4.22x  si
+   256  256        smem in=0 out=1   65536B      --- excede 48 KiB ---
+   256  256        smem in=1 out=1   89696B      --- excede 48 KiB ---
+
+   512   32          base (global)        -    61.19    1.41     1.00  si
+   512   32        smem in=1 out=0    7096B    13.80    6.24    4.43x  si
+   512   32        smem in=0 out=1   16384B    29.81    2.89    2.05x  si
+   512   32        smem in=1 out=1   23480B    29.23    2.95    2.09x  si
+   512   64          base (global)        -    90.29    0.95     1.00  si
+   512   64        smem in=1 out=0   12712B    13.70    6.29    6.59x  si
+   512   64        smem in=0 out=1   32768B    34.14    2.52    2.64x  si
+   512   64        smem in=1 out=1   45480B    29.30    2.94    3.08x  si
+   512  128          base (global)        -    91.45    0.94     1.00  si
+   512  128        smem in=1 out=0   24160B    13.94    6.18    6.56x  si
+   512  128        smem in=0 out=1   65536B      --- excede 48 KiB ---
+   512  128        smem in=1 out=1   89696B      --- excede 48 KiB ---
+   512  256          base (global)        -    92.94    0.93     1.00  si
+   512  256        smem in=1 out=0   46412B    14.66    5.88    6.34x  si
+   512  256        smem in=0 out=1  131072B      --- excede 48 KiB ---
+   512  256        smem in=1 out=1  177484B      --- excede 48 KiB ---
+
+  1024   32          base (global)        -    90.42    0.95     1.00  si
+  1024   32        smem in=1 out=0   12712B    13.55    6.34    6.67x  si
+  1024   32        smem in=0 out=1   32768B    68.59    1.25    1.32x  si
+  1024   32        smem in=1 out=1   45480B    58.34    1.47    1.55x  si
+  1024   64          base (global)        -   121.76    0.71     1.00  si
+  1024   64        smem in=1 out=0   24160B    13.22    6.50    9.21x  si
+  1024   64        smem in=0 out=1   65536B      --- excede 48 KiB ---
+  1024   64        smem in=1 out=1   89696B      --- excede 48 KiB ---
+  1024  128          base (global)        -   121.69    0.71     1.00  si
+  1024  128        smem in=1 out=0   46412B    13.46    6.38    9.04x  si
+  1024  128        smem in=0 out=1  131072B      --- excede 48 KiB ---
+  1024  128        smem in=1 out=1  177484B      --- excede 48 KiB ---
+  1024  256          base (global)        -   127.69    0.67     1.00  si
+  1024  256        smem in=1 out=0   90304B      --- excede 48 KiB ---
+  1024  256        smem in=0 out=1  262144B      --- excede 48 KiB ---
+  1024  256        smem in=1 out=1  352448B      --- excede 48 KiB ---
+

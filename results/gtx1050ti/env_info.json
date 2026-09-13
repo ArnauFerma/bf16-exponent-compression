@@ -1,0 +1,18 @@
+{
+  "os": "Windows-10-10.0.19045-SP0",
+  "python": "3.12.10",
+  "numpy": "2.5.3",
+  "cupy": "14.2.0",
+  "cuda_runtime": 12090,
+  "cuda_driver_api": 12060,
+  "gpu": {
+    "name": "NVIDIA GeForce GTX 1050 Ti",
+    "compute_capability": "6.1",
+    "sms": 6,
+    "l2_bytes": 1048576,
+    "l2_bytes_per_resident_thread": 85.3,
+    "memory_bytes": 4294705152,
+    "peak_bandwidth_gbs": 112.1
+  },
+  "nvidia_driver": "560.94"
+}
