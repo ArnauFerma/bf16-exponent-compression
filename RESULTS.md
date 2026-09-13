@@ -335,8 +335,8 @@ sweep was **rerun** with the corrected kernel and the numbers do not move
 ## Unexplained
 
 At BLOCK=128 with the input staged in shared, Huffman is **2x** faster than the
-ladder (12.83 vs 26.14 ms), far more than the 4.8% stream size difference
-justifies. Neither registers (21 vs 15) nor shared memory predict it. Recorded
+ladder (12.83 vs 26.14 ms; 12.92 vs 31.04 in the 2026-09-13 replication), far
+more than the 4.8% stream size difference justifies. Neither registers (21 vs 15) nor shared memory predict it. Recorded
 as an anomaly, not explained: it is not on the optimal path, but it is the kind
 of thing that sometimes hides a bug.
 
@@ -439,7 +439,10 @@ Compression percentages are for the 64M sample; the "pts" column is computed
 from unrounded values, which is why the Huffman row shows +2.25 while the two
 rounded percentages differ by 2.24.
 
-**The prefix-sum costs nothing measurable** (4.82 vs 4.81 ms, within noise):
+**The prefix-sum costs nothing measurable** (4.82 vs 4.81 ms, within noise;
+the 2026-09-13 replication in `results/gtx1050ti/` gives 4.85 vs 5.11, i.e.
+the 8-bit index 5% *faster* — both runs support "not slower", neither
+supports a precise delta):
 five `__shfl_up_sync` are invisible next to a chain of 64 dependent loads.
 Index traffic drops from 4 MB to 1.125 MB.
 

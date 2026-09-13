@@ -26,10 +26,12 @@ a considerably better codec by another route.
 entropy code**: coalescing the output write, and replacing the uint32 offset
 index with 8-bit lengths plus a warp prefix-sum.
 
-All GPU numbers come from one card, a GTX 1050 Ti (Pascal, 1 MiB L2). The
-timing sample is the model's embedding matrix, which compresses slightly better
-than the model average; both figures are given above and the difference is
-explained in [METHODOLOGY.md](METHODOLOGY.md).
+All GPU numbers come from one card, a GTX 1050 Ti (Pascal, 1 MiB L2). A
+complete re-run on the same card (`results/gtx1050ti/`, 2026-09-13) reproduces
+every ratio and lands the best configuration at 4.85 ms. The timing sample is
+the model's embedding matrix, which compresses slightly better than the model
+average; both figures are given above and the difference is explained in
+[METHODOLOGY.md](METHODOLOGY.md).
 
 ## The documents
 

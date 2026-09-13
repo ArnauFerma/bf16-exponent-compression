@@ -122,16 +122,17 @@ logs.
 
 | Component | Dev machine (`results/cpu/env_info.json`) | Measurement machine (`results/gtx1050ti/env_info.json`) |
 |---|---|---|
-| OS | Linux 6.8.0, glibc 2.39, x86_64 | *not recorded at measurement time — see below* |
-| Python | 3.12.3 | *not recorded* |
-| NumPy | 2.5.3 | *not recorded* |
-| CuPy / CUDA runtime | — | *not recorded* |
-| NVIDIA driver | — | *not recorded* |
+| OS | Linux 6.8.0, glibc 2.39, x86_64 | Windows 10, build 19045 |
+| Python | 3.12.3 | 3.12.10 |
+| NumPy | 2.5.3 | 2.5.3 |
+| CuPy | — | 14.2.0 (`cupy-cuda12x[ctk]`) |
+| CUDA runtime / driver API | — | 12.9 / 12.6 |
+| NVIDIA driver | — | 560.94 |
 
-The GPU runs on record predate `env_info.py`, so their versions were not
-captured. Running `python env_info.py results/gtx1050ti/env_info.json` on that
-machine fills the column; until then the versions behind the GPU tables are
-unknown, and that is a reproducibility gap.
+The interactive runs from which the RESULTS.md tables were transcribed predate
+`env_info.py`; the column above was recorded on 2026-09-13 on the same
+machine and environment, during the replication run described in section 10.
+No package was updated between the two.
 
 Kernels are CUDA C compiled at runtime through NVRTC via `cupy.RawKernel`. No
 compiler flags beyond CuPy's defaults.
@@ -256,7 +257,9 @@ appears.
    card. It is consistent, not proven, until measured on a card with a large
    L2 — the prediction is on record in HANDOFF 4.1.
 2. **Clocks not locked.** Mitigated as described in section 5; the IQR is
-   published next to every median.
+   published next to every median. The full replication run (section 10)
+   puts the run-to-run spread of absolute times at 1–6%; ratios between
+   variants measured in the same run are stable to about 1%.
 3. **The timing sample is the embedding matrix.** See section 2.
 4. **The GPU runs used a Huffman table built with the embedding counted
    twice.** Shown in section 2 to be an 843-bit difference on the sample.
@@ -310,9 +313,41 @@ Committed under `results/`, one directory per machine, so every table in
 RESULTS.md can be checked against the log it was transcribed from:
 
 - `results/cpu/` — Phase 1: `bench_results.json`, `bench_log.txt`, and the
-  extractor's log. Produced on the dev machine.
-- `results/gtx1050ti/` — Phases 2/2b/2c: `gpu_bench.json` and the per-stage
-  text logs. Produced on the measurement machine.
+  extractor's log, all from the deduplicated re-run. `*.pre-dedup.*` are the
+  same outputs from the original run with `lm_head` counted twice, kept so
+  the pre-correction tables in git history can be audited too. Produced on
+  the dev machine.
+- `results/gtx1050ti/` — Phases 2/2b/2c: `gpu_bench.json`, the four per-stage
+  text logs, `gpu_info.txt` and `env_info.json`. **These are from a complete
+  `run_all.ps1` execution on 2026-09-13**, not from the interactive runs the
+  RESULTS.md tables were transcribed from (whose console output was not
+  saved). They are therefore a same-hardware replication rather than the
+  source of the tables. How they compare:
+
+  | quantity | RESULTS.md | replication |
+  |---|---|---|
+  | Phase 2 base, BLOCK=64/128 thr, Huffman / ladder / floor | 9.70 / 9.73 / 9.57 ms | 9.70 / 9.75 / 9.57 ms |
+  | Phase 2 base, BLOCK=1024/128 thr, Huffman / ladder | 153.77 / 119.27 ms | 157.16 / 122.29 ms |
+  | 2b, output staged in shared, BLOCK=64/128 thr | 5.07 ms, 1.92x | 5.11 ms, 1.92x |
+  | 2b, both staged (worse than output alone) | 6.59 ms | 6.64 ms |
+  | 2b, input staged, BLOCK=256/64 thr | 13.05 ms, 4.38x | 13.16 ms, 4.46x |
+  | 2b, head-to-head best, Huffman vs ladder | 4.80 vs 5.07 ms, 1.055 | 4.85 vs 5.11 ms, 1.054 |
+  | 2b, unexplained anomaly, BLOCK=128/128 thr input staged | 12.83 vs 26.14 ms, 2.0x | 12.92 vs 31.04 ms, 2.4x |
+  | 2c, Huffman uint32 vs uint8+prefix-sum, BLOCK=64 | 4.81 vs 4.82 ms | 5.11 vs 4.85 ms |
+  | 2c, compression, every configuration | identical | identical |
+
+  Every ratio and every conclusion reproduces. Absolute times move by 1–6%,
+  which is the unlocked-clock noise floor on this card. The one pair to read
+  with that in mind is the 2c index comparison: in the transcribed run the
+  8-bit index cost nothing (4.82 vs 4.81); in the replication it is 5%
+  faster (4.85 vs 5.11), with the uint32 reference landing 6% above the
+  same kernel's time in the head-to-head stage of the same run. The claim
+  supported by both runs is "not slower", not a precise delta.
+
+  The text logs begin with PowerShell `NativeCommandError` noise: CuPy prints
+  a `CUDA_PATH` warning to stderr and PowerShell reports it as an error. It is
+  harmless. The `<redacted>` tokens replace filesystem paths that the
+  privacy scan removed.
 
 `run_all.sh` / `run_all.ps1` write into `results/<gpu-name>/` directly, and
 begin each run with `env_info.py`, which records the versions in section 3.
