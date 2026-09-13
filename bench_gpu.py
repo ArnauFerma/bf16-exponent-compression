@@ -83,7 +83,7 @@ def main():
     n_sm = props["multiProcessorCount"]
     peak_bw = 2 * props["memoryClockRate"] * 1e3 * (props["memoryBusWidth"] / 8) / 1e9
     print(f"GPU: {props['name'].decode()}  SMs={n_sm}  peak={peak_bw:.1f} GB/s  "
-          f"(clock not lockable: consumer/WDDM + active desktop)\n")
+          f"(SM clock sampled per configuration; run_all tries to lock it)\n")
 
     mm = np.memmap("outputs/real_weights_bf16.bin", dtype=np.uint16, mode="r")
     counts = np.load("outputs/real_exp_counts.npy")

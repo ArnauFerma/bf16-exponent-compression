@@ -11,9 +11,11 @@ history, commit `098cf3b`.
 ## 0. Summary in one sentence
 
 The original hypothesis — that a **ladder code** with a 10 B table would beat
-Huffman's 4 KiB hierarchical LUT — **is refuted**: it loses on both axes. But
-by attacking the memory access pattern and the block index, the codec went from
-9.70 ms / 30.73% to **4.82 ms / 32.97%**.
+Huffman's 4 KiB hierarchical LUT — **is refuted on three GPU architectures**:
+it loses on both axes. But by attacking the memory access pattern and the
+block index, the codec went from 9.70 ms / 30.73% to **4.82 ms / 32.97%** on
+the reference card, and the same design decodes the sample in 0.44 ms on an
+A100 and 0.20 ms on an RTX 4090.
 
 ---
 
@@ -26,7 +28,8 @@ is speculated.
 
 Unless stated otherwise, on real **Qwen3-0.6B** (596,049,920 unique BF16
 weights; the duplicated `lm_head` is dropped, see METHODOLOGY.md) and,
-for the kernels, a sample of 64M exponents on a **GTX 1050 Ti**.
+for the kernels, a sample of 64M exponents on a **GTX 1050 Ti**; Phase 2e
+repeats every kernel measurement on an **A100** and an **RTX 4090**.
 
 | Claim | Value | How it was verified |
 |---|---|---|
@@ -45,13 +48,16 @@ for the kernels, a sample of 64M exponents on a **GTX 1050 Ti**.
 | **8-bit index + prefix-sum** | **+2.25 points, zero cost** | 4.82 vs 4.81 ms |
 | Mutual information between the BF16 fields | I(exp; mant) = **0.040 bits/weight**; sign independent of both | Exact joint histogram over all 596M unique weights |
 | Field split vs full-alphabet Huffman | **0.076 bits/weight = 0.47 points** given away | Both rates computed analytically from exact counts (Phase 2d) |
+| **BLOCK cliff is an L2 effect** | 16.2x on 85 B/thread -> 1.96x (A100, 190 B) -> 1.71x (4090, 384 B) | Same code on three architectures (Phase 2e) |
+| Input staging gain decays with L2/thread, does not switch off | 4.4x -> 2.0x -> 1.2x at BLOCK=256 | Phase 2e; corrects Phase 2b's threshold reading |
+| Ladder loses at the operating point on every card | l/h 1.05 / ~1.0 / 1.3 | Optimised kernel, BLOCK=64, three cards |
+| Optimised decoder time follows SM clock | 4090 2.2x faster than A100 with half the bandwidth; clock ratio 2.2x | Two cards; consistent with, not proof of, a latency-bound chain |
 
 ### Not measured — still open
 
 | Question | Why it matters |
 |---|---|
-| What happens on a GPU with a large L2 | Everything above is Pascal with 1 MiB of L2. See section 4. |
-| Real occupancy, warp stalls, divergence | Nsight Compute **does not support Pascal**; could not be measured here |
+| Real occupancy, warp stalls, divergence | Nsight Compute does not support Pascal, and the rented containers block its counters; still unmeasured on every card |
 | Comparison against DFloat11's published kernels | Only compared against our own implementation |
 | End-to-end tokens/s (Phase 3) | "Faster kernel" is not the same as "faster inference" |
 | Anomaly: at BLOCK=128 with input staged in shared, Huffman is 2x faster than the ladder | Far more than the 4.8% stream difference justifies. Unexplained. |
@@ -128,6 +134,12 @@ Phase 2d bounds what the split itself gives away: 0.076 bits/weight
 (0.47 points) against a full-alphabet Huffman, almost all of it in the two
 largest binades. Everything beyond that is structural.
 
+Phase 2e adds where the structural headroom is. With the access pattern
+fixed, the decoder sits at 10–45% of peak bandwidth on datacenter cards and
+its time follows the SM clock: it is bound by the 64-step chain of dependent
+loads inside each block, not by memory. That is the thing GEMM fusion
+removes, and it is why 2606.15789's gain is fusion rather than the coder.
+
 The doubt the original handoff already raised turned out to be the right one:
 
 > *"Canonical Huffman uses a LUT: one SRAM access. The ladder uses `clz` +
@@ -139,10 +151,19 @@ It loses.
 
 ## 4. What is next, in order of value
 
-### 4.1 Measure on a GPU with a large L2 — BLOCKING for publishing anything
+### 4.1 Measure on a GPU with a large L2 — DONE (Phase 2e, 2026-09-13)
 
-Everything measured is Pascal with 1 MiB of L2. The figure that governs the
-BLOCK cliff is **L2 per resident thread**:
+Measured on a rented A100-SXM4-80GB (190 B/thread) and RTX 4090 (384
+B/thread), ~1.7 USD in total. The cliff prediction held (16.2x -> 1.96x ->
+1.71x); the "input staging stops mattering" sub-prediction did not — the gain
+decays with L2 per thread instead of switching off; "large BLOCK becomes
+viable" is moot because the 8-bit index removed the reason to want it. Two
+findings beyond the prediction: combining input and output staging is best
+on Ampere/Ada (worst on Pascal), and the optimised decoder's time tracks SM
+clock, not bandwidth. Full tables in RESULTS.md, Phase 2e. The original
+reasoning and prediction are kept below as written.
+
+The figure that governs the BLOCK cliff is **L2 per resident thread**:
 
 | card | L2 | SMs | resident threads | **L2 / thread** |
 |---|---|---|---|---|
@@ -190,10 +211,12 @@ needed to merge sign+mantissa: 64 MB + 64 MB read and 128 MB written =
 pipeline traffic from ~345 MB to ~217 MB (−37%) and removes an entire launch.
 Needed for Phase 3 regardless.
 
-### 4.4 16-bit index for BLOCK >= 256
+### 4.4 16-bit index for BLOCK >= 256 — dropped
 
-The 8-bit one does not reach. The relative 16-bit variant gives 2.016 B/block
-(+1.94 points at BLOCK=256). Useful if 4.1 confirms that large BLOCK is viable.
+The 8-bit one does not reach BLOCK >= 256. The relative 16-bit variant would
+give 2.016 B/block (+1.94 points at BLOCK=256). Phase 2e showed large BLOCK
+is 3–6x slower than BLOCK=64 even on cards with no L2 cliff, so there is no
+configuration where this index would be used.
 
 ### 4.5 Huffman over pairs
 
@@ -224,9 +247,10 @@ Beating DFloat11 is no longer enough to publish; see section 6.
 - **Verify bit-exactness BEFORE timing, never after.** A kernel that writes
   outside its shared memory can give almost-correct results and a flattering
   time.
-- **Do not combine optimizations without measuring them separately.** Input +
-  output in shared is *worse* than output alone: the input spends shared memory
-  and a barrier without buying anything.
+- **Do not combine optimizations without measuring them separately — and do
+  not carry the answer across architectures.** On Pascal, input + output in
+  shared is *worse* than output alone; on Ampere and Ada the combination is
+  the best variant (Phase 2e).
 - Consumer GPU clocks cannot be locked under Windows/WDDM. Compensate with
   sustained warm-up, median, and randomized order — and close everything else
   using the GPU.
@@ -353,7 +377,10 @@ choice of entropy code was worth almost nothing.
    what they exploit.
 3. The structural ceiling of the current design is that it is a **standalone
    decompression kernel**. Without GEMM fusion you pay the full memory round
-   trip, and that is the difference between 2.01x and 11x.
+   trip, and that is the difference between 2.01x and 11x. Phase 2e sharpens
+   this: on an A100 the optimised decoder reaches 10% of peak bandwidth and
+   its time scales with SM clock, so the standalone kernel is bound by its
+   serial decode chain, not by memory.
 4. **The 11x is not the entropy coder.** They attribute it to fusion:
    *"eliminates global-memory materialization of decompressed layers and
    overlaps decompression with tensor-core computation"*, with tile-alignment

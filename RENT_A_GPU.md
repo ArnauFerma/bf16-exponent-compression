@@ -3,6 +3,11 @@
 Self-contained: this is enough to run the test without consulting anything
 else. Total cost **~1.40 USD**, wall-clock time **under an hour**.
 
+> **Done on 2026-09-13** on an A100-SXM4-80GB (1.59 USD/h, Secure Cloud —
+> Community had no stock) and an RTX 4090 (0.74 USD/h), ~1.7 USD in total.
+> Outcome against the prediction in section 7: RESULTS.md, Phase 2e. Kept as
+> the procedure for reproducing it or adding a card.
+
 ---
 
 ## 1. What is missing, and why it needs a different card

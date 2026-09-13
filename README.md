@@ -26,11 +26,19 @@ a considerably better codec by another route.
 entropy code**: coalescing the output write, and replacing the uint32 offset
 index with 8-bit lengths plus a warp prefix-sum.
 
-All GPU numbers come from one card, a GTX 1050 Ti (Pascal, 1 MiB L2). A
-complete re-run on the same card (`results/gtx1050ti/`, 2026-09-13) reproduces
-every ratio and lands the best configuration at 4.85 ms. The timing sample is
-the model's embedding matrix, which compresses slightly better than the model
-average; both figures are given above and the difference is explained in
+The design was found on a GTX 1050 Ti (Pascal, 1 MiB L2) and then measured
+unchanged on a rented A100 and RTX 4090 (`results/`):
+
+| best configuration, 64M symbols | GTX 1050 Ti | A100 | RTX 4090 |
+|---|---|---|---|
+| time | 4.8 ms | 0.44 ms | 0.20 ms |
+| ladder / Huffman | 1.05 | ~1.0 | 1.3 |
+| 8-bit index cost | none | none | none |
+
+The Pascal "BLOCK cliff" that shaped Phase 2 is an L2 effect: 16x on the
+1050 Ti, 2x on the A100, 1.7x on the 4090. The timing sample is the model's
+embedding matrix, which compresses slightly better than the model average;
+both figures are given above and the difference is explained in
 [METHODOLOGY.md](METHODOLOGY.md).
 
 ## The documents
@@ -38,7 +46,7 @@ average; both figures are given above and the difference is explained in
 | File | What it contains |
 |---|---|
 | **[HANDOFF.md](HANDOFF.md)** | **Start here.** Current status, what is measured and what is not, and what to do next. |
-| [RESULTS.md](RESULTS.md) | Chronological log: Phase 1 (CPU), Phase 2 (kernels), 2b (access pattern), 2c (vector coding and index), 2d (cross-field mutual information). All the number tables. |
+| [RESULTS.md](RESULTS.md) | Chronological log: Phase 1 (CPU), Phase 2 (kernels), 2b (access pattern), 2c (vector coding and index), 2d (cross-field mutual information), 2e (A100 and RTX 4090). All the number tables. |
 | [METHODOLOGY.md](METHODOLOGY.md) | How every number was produced: data and its provenance, which sample each experiment used, hardware, timing and correctness protocols, and the known threats to validity. Read this before citing anything. |
 | [RENT_A_GPU.md](RENT_A_GPU.md) | How and where to rent a GPU by the hour for the missing measurements, with the prediction to check against. |
 | [OPERATOR_WINDOWS.md](OPERATOR_WINDOWS.md) | Copy-and-paste guide for someone lending a Windows machine with an NVIDIA GPU (Turing or newer). |

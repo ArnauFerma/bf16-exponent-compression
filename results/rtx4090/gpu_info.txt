@@ -1,0 +1,2 @@
+name, clocks.current.sm [MHz], clocks.max.sm [MHz]
+NVIDIA GeForce RTX 4090, 2520 MHz, 3105 MHz

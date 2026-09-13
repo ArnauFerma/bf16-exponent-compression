@@ -596,3 +596,148 @@ The difference decomposes exactly into three parts:
   everything else as now, would capture nearly all of it with a small table.
   Not measured; recorded as the cheapest way to close most of the gap.
 
+---
+
+# Phase 2e — The L2 prediction tested on an A100 and an RTX 4090
+
+## Question
+
+Every GPU number before this phase came from one Pascal card with 1 MiB of
+L2. Phase 2 and 2b attributed the collapse of performance at large `BLOCK`
+to the resident working set overflowing L2, and HANDOFF 4.1 recorded the
+prediction before measuring: on a card with a large L2 per resident thread
+the cliff should disappear, staging the input in shared should stop
+mattering at BLOCK=256, and BLOCK=512–1024 should become viable. This phase
+tests it on two rented cards that bracket the prediction on the L2-per-thread
+axis (`RENT_A_GPU.md`; ~1.7 USD in total).
+
+## Cards
+
+| | GTX 1050 Ti | A100-SXM4-80GB | RTX 4090 |
+|---|---|---|---|
+| architecture | Pascal, SM 6.1 | Ampere, SM 8.0 | Ada, SM 8.9 |
+| SMs / L2 | 6 / 1 MiB | 108 / 40 MiB | 128 / 72 MiB |
+| **L2 per resident thread** | **85 B** | **190 B** | **384 B** |
+| peak bandwidth | 112 GB/s | 2039 GB/s | 1008 GB/s |
+| SM clock during the run | 139–1923 MHz, unlocked | 1140 MHz | 2520 MHz |
+| where | home PC, Windows | RunPod Secure Cloud container | RunPod Secure Cloud container |
+| clocks locked | no (WDDM) | no (no permission in container) | no (same) |
+| IQR over 11 repetitions | 0–3 ms | 0 | 0 |
+| Nsight Compute | unsupported | blocked by host | blocked by host |
+
+Same code, same 64M-symbol sample, same tables, same `run_all.sh`. Logs and
+`env_info.json` in `results/a100sxm480gb/` and `results/rtx4090/`.
+
+## The predictions, one by one
+
+**1. "The BLOCK cliff should disappear."** Base kernel, Huffman, 128 threads:
+
+| BLOCK | 1050 Ti | A100 | 4090 |
+|---|---|---|---|
+| 64 | 9.70 ms | 1.26 ms | 1.24 ms |
+| 128 | 52.11 | 1.88 | 1.76 |
+| 256 | 84.86 | 3.02 | 2.02 |
+| 512 | 121.08 | 3.03 | 2.26 |
+| 1024 | 157.16 | 2.46 | 2.13 |
+| **1024 / 64** | **16.2x** | **1.96x** | **1.71x** |
+
+**Confirmed.** The 16x collapse becomes 2x and 1.7x. What remains is not an
+L2 effect: the memory-floor kernel rises the same way (A100 1.28 -> 1.72 ms,
+4090 1.24 -> 1.64 ms), and at BLOCK=1024 there are only 62,500 threads for
+221,184 (A100) or 196,608 (4090) resident slots. The residual is
+under-occupancy of the card, and it would affect any one-thread-per-block
+decoder.
+
+**2. "Staging the input in shared should stop mattering at BLOCK=256."**
+Attribution run, 64 threads:
+
+| input staged, BLOCK=256 | 1050 Ti | A100 | 4090 |
+|---|---|---|---|
+| speed-up vs base | **4.38x** (4.46x in the replication) | **2.11x** | **1.20x** |
+
+**Not confirmed as stated — and more informative than a yes.** The gain does
+not switch off when the working set fits; it decays smoothly with L2 per
+thread: 85 B -> 4.4x, 190 B -> 2.0x, 384 B -> 1.2x. Coalescing the input
+helps even when every byte is an L2 hit, because 32 scattered streams per
+warp are served more slowly from L2 than one contiguous load. The
+L2-per-thread figure predicts the *size* of the effect, not its presence.
+Phase 2b's explanation ("input staging is redundant when it fits in L2") is
+corrected accordingly.
+
+**3. "BLOCK=512–1024 should become viable."** Optimised kernel (output
+staged), Huffman, best thread count per row:
+
+| BLOCK | A100 | 4090 |
+|---|---|---|
+| 64 | **0.44 ms** | **0.20 ms** |
+| 256 | 0.97 | 0.39 |
+| 1024 | 1.52 | 1.21 |
+
+**Moot rather than wrong.** Large BLOCK is 3–6x slower than BLOCK=64 on both
+cards even without a cliff, because the serial chain inside each block is
+16x longer and nothing hides it. The reason to want large BLOCK — index
+overhead — was removed by the 8-bit index in Phase 2c, which gives BLOCK=64
+32.97% against 33.07% for BLOCK=256 with a uint32 index. There is no
+configuration on any of the three cards where large BLOCK is the right
+choice.
+
+## What the two new cards changed beyond the prediction
+
+**Output staging scales up with the card.** BLOCK=64, 128 threads:
+
+| | 1050 Ti | A100 | 4090 |
+|---|---|---|---|
+| output staged vs base | 1.92x | 2.61x | 4.55x |
+| input + output staged vs base | 1.48x (**worse** than output alone) | 2.91x (better) | 5.49x (better) |
+
+The Phase 2b lesson "combining the two optimisations is worse than output
+alone" was Pascal-specific. On Ampere and Ada the combined variant is the
+best one. Trap list updated: attribution results do not transfer across
+architectures either.
+
+**The optimised kernel tracks SM clock, not bandwidth.** Best Huffman time
+for 64M symbols: A100 0.44 ms, 4090 0.20 ms — the 4090 is **2.2x faster
+with half the bandwidth**, and 2520 / 1140 MHz = 2.2x. The base kernel does
+not show this (1.26 vs 1.24 ms: latency-bound on the scattered pattern,
+clock-insensitive). Once the access pattern is fixed, the decoder is bound by
+the latency of its 64-step chain of dependent loads, and that chain runs at
+SM clock. Two cards is not a proof; it is recorded as the reading most
+consistent with the data. Achieved bandwidth confirms the decoder is nowhere
+near the memory roof on the datacenter card:
+
+| best configuration | GB/s | % of peak |
+|---|---|---|
+| 1050 Ti | 18.3 | 16% |
+| A100 | 204 | 10% |
+| 4090 | 453 | 45% |
+
+**Huffman vs ladder, optimised kernel, at the operating point (BLOCK=64):**
+
+| | 1050 Ti | A100 | 4090 |
+|---|---|---|---|
+| ladder / Huffman time | 1.055 | 0.97–1.08 | **1.26–1.36** |
+
+The ladder ties on the A100 and loses by a third on the 4090. On the *base*
+kernel at BLOCK >= 512 the ladder does beat Huffman on the A100 (l/h
+0.79–0.95) — the compute-bound regime the original hypothesis predicted —
+but those configurations are 2x slower than BLOCK=64 in absolute terms, as
+on Pascal. Three architectures, same verdict: the ladder never wins where
+you would run it.
+
+**8-bit index + prefix-sum:** 1.006x (A100) and 0.996x (4090) the time of
+the uint32 index, +2.25 points. Free on every card.
+
+## Taken together
+
+- The L2 explanation survives as a *trend* (the cliff and the input-staging
+  gain both shrink monotonically with L2 per thread) and is corrected as a
+  *threshold* (nothing switches off when the data fits).
+- On datacenter hardware the standalone decoder sits at 10–45% of peak
+  bandwidth and its time follows SM clock. The remaining headroom is not in
+  the entropy code, not in the index, and not in bandwidth: it is in the
+  serial chain, which is exactly what GEMM fusion or a wider-than-one-thread
+  decode would attack (HANDOFF section 6).
+- Best measured configuration on each card, same design throughout:
+  Huffman, BLOCK=64, output staged (plus input on Ampere/Ada), 8-bit index.
+  Decoding the 64M-symbol sample takes 4.8 ms / 0.44 ms / 0.20 ms.
+

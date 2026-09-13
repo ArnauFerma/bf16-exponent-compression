@@ -108,11 +108,17 @@ from the full histogram, never from the sample.
 | Machine | Role | GPU | Notes |
 |---|---|---|---|
 | Dev machine (Linux) | Phase 1, all CPU analysis, all writing | none | 3.5 GiB RAM + 3.5 GiB swap. This is why extraction streams and why the CPU roundtrip is sampled. |
-| Measurement machine (Windows, WDDM driver model) | **All GPU numbers in this repository** | NVIDIA GeForce GTX 1050 Ti: Pascal, SM 6.1, 6 SMs, 4 GB GDDR5, 1 MiB L2, theoretical peak 112.1 GB/s (computed from `memoryClockRate` and `memoryBusWidth`) | Also drives the desktop. Clocks cannot be locked under WDDM. |
+| Measurement machine (Windows, WDDM driver model) | Phases 2, 2b, 2c and their replication | NVIDIA GeForce GTX 1050 Ti: Pascal, SM 6.1, 6 SMs, 4 GB GDDR5, 1 MiB L2, theoretical peak 112.1 GB/s (computed from `memoryClockRate` and `memoryBusWidth`) | Also drives the desktop. Clocks cannot be locked under WDDM. |
+| RunPod Secure Cloud container (Linux, Ubuntu 24.04 image `runpod/pytorch:1.0.3-cu1281-torch291-ubuntu2404`) | Phase 2e | NVIDIA A100-SXM4-80GB: Ampere, SM 8.0, 108 SMs, 40 MiB L2, peak 2039 GB/s | Rented 2026-09-13, ~46 min. Clock locking refused by the host; SM clock read 1140 MHz. |
+| RunPod Secure Cloud container (same image) | Phase 2e | NVIDIA GeForce RTX 4090: Ada, SM 8.9, 128 SMs, 72 MiB L2, peak 1008 GB/s | Rented 2026-09-13, ~40 min. Clock locking refused; SM clock read 2520 MHz. |
 
-**No other GPU has been measured yet.** The operator and rent-a-GPU guides in
-this repository describe *planned* runs; HANDOFF section 4.1 states
-why they are blocking for any generalisation.
+The rented runs follow `RENT_A_GPU.md` exactly, with the repository uploaded
+as a `git archive` of the commit in use instead of cloned (the repository
+was private at the time). Each pod ran `setup_cloud.sh` (model download,
+extraction with the duplicate dropped, bit-exact verification) and
+`run_all.sh` unattended; both verified `RESULT: both kernels correct` before
+timing. The operator guides for a borrowed RTX 4070 describe a run that has
+not happened.
 
 ### Software versions
 
@@ -120,14 +126,16 @@ why they are blocking for any generalisation.
 the account; `run_all` calls it first and stores `env_info.json` next to the
 logs.
 
-| Component | Dev machine (`results/cpu/env_info.json`) | Measurement machine (`results/gtx1050ti/env_info.json`) |
-|---|---|---|
-| OS | Linux 6.8.0, glibc 2.39, x86_64 | Windows 10, build 19045 |
-| Python | 3.12.3 | 3.12.10 |
-| NumPy | 2.5.3 | 2.5.3 |
-| CuPy | — | 14.2.0 (`cupy-cuda12x[ctk]`) |
-| CUDA runtime / driver API | — | 12.9 / 12.6 |
-| NVIDIA driver | — | 560.94 |
+| Component | Dev machine | GTX 1050 Ti | A100 pod | RTX 4090 pod |
+|---|---|---|---|---|
+| OS | Linux 6.8.0, glibc 2.39 | Windows 10, build 19045 | Linux 6.8.0-138 (host), Ubuntu 24.04 image | Linux 6.8.0-85 (host), same image |
+| Python | 3.12.3 | 3.12.10 | 3.12.3 | 3.12.3 |
+| NumPy | 2.5.3 | 2.5.3 | 2.5.3 | 2.5.3 |
+| CuPy | — | 14.2.0 (`cupy-cuda12x[ctk]`) | 14.2.0 | 14.2.0 |
+| CUDA runtime / driver API | — | 12.9 / 12.6 | 12.9 / 13.2 | 12.9 / 12.8 |
+| NVIDIA driver | — | 560.94 | 595.91.07 | 570.195.03 |
+
+Each column is the `env_info.json` in the corresponding `results/` directory.
 
 The interactive runs from which the RESULTS.md tables were transcribed predate
 `env_info.py`; the column above was recorded on 2026-09-13 on the same
@@ -177,7 +185,8 @@ Defined in `bench_gpu.py::measure` and reused by every later harness:
   correlate with configuration.
 - **Clock:** `nvidia-smi --query-gpu=clocks.sm` is sampled before and after
   each configuration and stored alongside the time. On the 1050 Ti it ranges
-  139–1923 MHz. A "SM cycles per symbol" figure (ms x MHz x SMs / symbols) is
+  139–1923 MHz; the rented A100 and 4090 sat at 1140 and 2520 MHz throughout
+  (locking was refused by the host, but the IQR was 0 on every row). A "SM cycles per symbol" figure (ms x MHz x SMs / symbols) is
   computed as a clock-invariant view.
 - **Environment:** everything else using the GPU is closed. On the
   measurement machine this took the IQR from ~5 ms to 0–3 ms. Under
@@ -259,10 +268,13 @@ Scripts: `analysis_vector.py`, `analysis_index.py`, `analysis_fields.py`.
 Stated here in one place. Each is also flagged where the affected number
 appears.
 
-1. **One GPU, one architecture (Pascal, 2016), one machine.** The L2
-   explanation for the BLOCK cliff rests on two lines of evidence on the same
-   card. It is consistent, not proven, until measured on a card with a large
-   L2 — the prediction is on record in HANDOFF 4.1.
+1. **Three GPUs, three architectures, but one sample of each.** Phases 2–2c
+   and the design decisions were made on a single Pascal card; Phase 2e
+   repeats every kernel measurement on one A100 and one RTX 4090, both in
+   rented containers. The L2 explanation is now supported as a trend across
+   three points and corrected as a threshold (RESULTS Phase 2e). The
+   "decoder time follows SM clock" reading rests on two cards and is stated
+   as consistent-with, not shown.
 2. **Clocks not locked.** Mitigated as described in section 5; the IQR is
    published next to every median. The full replication run (section 10)
    puts the run-to-run spread of absolute times at 1–6%; ratios between
@@ -325,6 +337,9 @@ RESULTS.md can be checked against the log it was transcribed from:
   same outputs from the original run with `lm_head` counted twice, kept so
   the pre-correction tables in git history can be audited too. Produced on
   the dev machine.
+- `results/a100sxm480gb/`, `results/rtx4090/` — Phase 2e, same file set,
+  produced unattended by `run_all.sh` in RunPod containers on 2026-09-13.
+  These *are* the source of the Phase 2e tables.
 - `results/gtx1050ti/` — Phases 2/2b/2c: `gpu_bench.json`, the four per-stage
   text logs, `gpu_info.txt` and `env_info.json`. **These are from a complete
   `run_all.ps1` execution on 2026-09-13**, not from the interactive runs the

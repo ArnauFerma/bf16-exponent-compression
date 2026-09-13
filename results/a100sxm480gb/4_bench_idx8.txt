@@ -1,0 +1,19 @@
+symbols: 64,000,000
+
+ BLOCK  thr    codec     index |       ms    GB/s |   B/blockcompression | ok
+-----------------------------------------------------------------------------
+    64  128  huffman    uint32 |    0.47  188.08 |     4.000     30.73% | yes
+    64  128  huffman  uint8+ps |    0.47  183.16 |     1.125     32.97% | yes   (1.006x time, +2.25 pts)
+    64  128   ladder    uint32 |    0.47  191.28 |     4.000     29.94% | yes
+    64  128   ladder  uint8+ps |    0.48  181.97 |     1.125     32.19% | yes   (0.983x time, +2.25 pts)
+
+   128  128  huffman    uint32 |    0.85  102.23 |     4.000     32.29% | yes
+   128  128  huffman  uint8+ps |    0.85  100.58 |     1.125     33.41% | yes   (1.000x time, +1.12 pts)
+   128  128   ladder    uint32 |    0.84  104.16 |     4.000     31.51% | yes
+   128  128   ladder  uint8+ps |    0.87   99.22 |     1.125     32.63% | yes   (0.968x time, +1.12 pts)
+
+   256  128  huffman    uint32 |    0.97   88.59 |     4.000     33.07% | yes
+   256  128  huffman     uint8 |  block length range 409 > 255; does not fit in 8 bits at BLOCK=256
+   256  128   ladder    uint32 |    0.99   87.66 |     4.000     32.29% | yes
+   256  128   ladder     uint8 |  block length range 409 > 255; does not fit in 8 bits at BLOCK=256
+

@@ -1,0 +1,18 @@
+{
+  "os": "Linux-6.8.0-138-generic-x86_64-with-glibc2.39",
+  "python": "3.12.3",
+  "numpy": "2.5.3",
+  "cupy": "14.2.0",
+  "cuda_runtime": 12090,
+  "cuda_driver_api": 13020,
+  "gpu": {
+    "name": "NVIDIA A100-SXM4-80GB",
+    "compute_capability": "8.0",
+    "sms": 108,
+    "l2_bytes": 41943040,
+    "l2_bytes_per_resident_thread": 189.6,
+    "memory_bytes": 85094825984,
+    "peak_bandwidth_gbs": 2039.0
+  },
+  "nvidia_driver": "595.91.07"
+}

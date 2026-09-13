@@ -1,0 +1,89 @@
+symbols: 64,000,000
+
+ BLOCK  thr                variant   shared        ms    GB/s  vs base  ok
+--------------------------------------------------------------------------
+    64   32          base (global)        -     1.24   72.17     1.00  yes
+    64   32        smem in=1 out=0     972B     1.24   72.10    1.00x  yes
+    64   32        smem in=0 out=1    2048B     0.43  209.50    2.90x  yes
+    64   32        smem in=1 out=1    3020B     0.44  203.28    2.82x  yes
+    64   64          base (global)        -     1.24   72.30     1.00  yes
+    64   64        smem in=1 out=0    1936B     1.23   73.00    1.01x  yes
+    64   64        smem in=0 out=1    4096B     0.47  191.28    2.65x  yes
+    64   64        smem in=1 out=1    6032B     0.42  213.50    2.95x  yes
+    64  128          base (global)        -     1.23   73.18     1.00  yes
+    64  128        smem in=1 out=0    3724B     1.23   72.92    1.00x  yes
+    64  128        smem in=0 out=1    8192B     0.47  191.10    2.61x  yes
+    64  128        smem in=1 out=1   11916B     0.42  212.94    2.91x  yes
+    64  256          base (global)        -     1.23   72.73     1.00  yes
+    64  256        smem in=1 out=0    7096B     1.24   72.48    1.00x  yes
+    64  256        smem in=0 out=1   16384B     0.47  189.25    2.60x  yes
+    64  256        smem in=1 out=1   23480B     0.42  211.92    2.91x  yes
+
+   128   32          base (global)        -     1.83   47.97     1.00  yes
+   128   32        smem in=1 out=0    1936B     1.71   51.13    1.07x  yes
+   128   32        smem in=0 out=1    4096B     0.82  106.76    2.23x  yes
+   128   32        smem in=1 out=1    6032B     0.74  119.12    2.48x  yes
+   128   64          base (global)        -     2.04   42.98     1.00  yes
+   128   64        smem in=1 out=0    3724B     1.70   51.72    1.20x  yes
+   128   64        smem in=0 out=1    8192B     0.85  102.70    2.39x  yes
+   128   64        smem in=1 out=1   11916B     0.73  120.20    2.80x  yes
+   128  128          base (global)        -     2.00   43.90     1.00  yes
+   128  128        smem in=1 out=0    7096B     1.70   51.51    1.17x  yes
+   128  128        smem in=0 out=1   16384B     0.84  104.33    2.38x  yes
+   128  128        smem in=1 out=1   23480B     0.73  119.86    2.73x  yes
+   128  256          base (global)        -     2.03   43.16     1.00  yes
+   128  256        smem in=1 out=0   12712B     1.73   50.73    1.18x  yes
+   128  256        smem in=0 out=1   32768B     0.83  106.11    2.46x  yes
+   128  256        smem in=1 out=1   45480B     0.74  118.60    2.75x  yes
+
+   256   32          base (global)        -     2.25   38.46     1.00  yes
+   256   32        smem in=1 out=0    3724B     1.81   47.89    1.25x  yes
+   256   32        smem in=0 out=1    8192B     1.02   84.90    2.21x  yes
+   256   32        smem in=1 out=1   11916B     0.94   92.54    2.41x  yes
+   256   64          base (global)        -     3.70   23.39     1.00  yes
+   256   64        smem in=1 out=0    7096B     1.75   49.47    2.11x  yes
+   256   64        smem in=0 out=1   16384B     1.01   85.54    3.66x  yes
+   256   64        smem in=1 out=1   23480B     0.95   91.69    3.92x  yes
+   256  128          base (global)        -     3.62   23.96     1.00  yes
+   256  128        smem in=1 out=0   12712B     1.77   48.88    2.04x  yes
+   256  128        smem in=0 out=1   32768B     0.99   87.55    3.65x  yes
+   256  128        smem in=1 out=1   45480B     0.95   91.46    3.82x  yes
+   256  256          base (global)        -     3.69   23.49     1.00  yes
+   256  256        smem in=1 out=0   24160B     1.79   48.35    2.06x  yes
+   256  256        smem in=0 out=1   65536B     --- exceeds 48 KiB ---
+   256  256        smem in=1 out=1   89696B     --- exceeds 48 KiB ---
+
+   512   32          base (global)        -     3.17   27.15     1.00  yes
+   512   32        smem in=1 out=0    7096B     1.89   45.71    1.68x  yes
+   512   32        smem in=0 out=1   16384B     1.63   52.76    1.94x  yes
+   512   32        smem in=1 out=1   23480B     1.50   57.34    2.11x  yes
+   512   64          base (global)        -     2.88   29.97     1.00  yes
+   512   64        smem in=1 out=0   12712B     2.18   39.53    1.32x  yes
+   512   64        smem in=0 out=1   32768B     1.62   53.13    1.77x  yes
+   512   64        smem in=1 out=1   45480B     1.51   57.10    1.91x  yes
+   512  128          base (global)        -     2.87   30.01     1.00  yes
+   512  128        smem in=1 out=0   24160B     2.17   39.70    1.32x  yes
+   512  128        smem in=0 out=1   65536B     --- exceeds 48 KiB ---
+   512  128        smem in=1 out=1   89696B     --- exceeds 48 KiB ---
+   512  256          base (global)        -     2.86   30.13     1.00  yes
+   512  256        smem in=1 out=0   46412B     2.22   38.75    1.29x  yes
+   512  256        smem in=0 out=1  131072B     --- exceeds 48 KiB ---
+   512  256        smem in=1 out=1  177484B     --- exceeds 48 KiB ---
+
+  1024   32          base (global)        -     2.08   41.38     1.00  yes
+  1024   32        smem in=1 out=0   12712B     2.20   39.04    0.94x  yes
+  1024   32        smem in=0 out=1   32768B     2.40   35.87    0.87x  yes
+  1024   32        smem in=1 out=1   45480B     2.83   30.39    0.73x  yes
+  1024   64          base (global)        -     2.18   39.38     1.00  yes
+  1024   64        smem in=1 out=0   24160B     2.10   40.83    1.04x  yes
+  1024   64        smem in=0 out=1   65536B     --- exceeds 48 KiB ---
+  1024   64        smem in=1 out=1   89696B     --- exceeds 48 KiB ---
+  1024  128          base (global)        -     1.96   43.90     1.00  yes
+  1024  128        smem in=1 out=0   46412B     2.22   38.72    0.88x  yes
+  1024  128        smem in=0 out=1  131072B     --- exceeds 48 KiB ---
+  1024  128        smem in=1 out=1  177484B     --- exceeds 48 KiB ---
+  1024  256          base (global)        -     2.41   35.71     1.00  yes
+  1024  256        smem in=1 out=0   90304B     --- exceeds 48 KiB ---
+  1024  256        smem in=0 out=1  262144B     --- exceeds 48 KiB ---
+  1024  256        smem in=1 out=1  352448B     --- exceeds 48 KiB ---
+
