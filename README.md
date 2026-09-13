@@ -1,46 +1,46 @@
-# Compresion lossless de pesos BF16
+# Lossless BF16 weight compression
 
-Compresion sin perdidas de pesos de modelos de IA, codificando solo el campo
-**exponente** de BF16. Misma familia que [DFloat11](https://github.com/LeanModels/DFloat11)
-(NeurIPS 2025). Signo y mantisa se guardan crudos porque su entropia ya es
-practicamente maxima; todo el margen esta en el exponente (2,63 bits de 8).
+Lossless compression of AI model weights by entropy-coding only the BF16
+**exponent** field. Same family as [DFloat11](https://github.com/LeanModels/DFloat11)
+(NeurIPS 2025). Sign and mantissa are stored raw because their entropy is
+already close to maximal; all the headroom is in the exponent (2.63 bits of 8).
 
-## Estado en una linea
+## Status in one line
 
-La hipotesis original del proyecto (un **codigo por escalones** con tabla de
-10 B en vez de la LUT jerarquica de 4 KiB de Huffman) **ha sido refutada**: es
-0,85 puntos peor en compresion *y* entre 5% y 43% mas lenta. Pero el trabajo
-produjo un codec bastante mejor por otra via.
+The project's original hypothesis — a **ladder code** with a 10 B table
+instead of Huffman's 4 KiB hierarchical LUT — **has been refuted**: it is
+0.85 points worse on compression *and* 5% to 43% slower. But the work produced
+a considerably better codec by another route.
 
-## Mejor configuracion medida
+## Best measured configuration
 
-**Huffman, BLOCK=64, 128 hilos, salida en shared, indice de 8 bits**
+**Huffman, BLOCK=64, 128 threads, output staged in shared, 8-bit index**
 
-| | Fase 2 (punto de partida) | ahora |
+| | Phase 2 (starting point) | now |
 |---|---|---|
-| tiempo (64M simbolos, GTX 1050 Ti) | 9,70 ms | **4,82 ms** |
-| compresion | 30,73% | **32,97%** |
+| time (64M symbols, GTX 1050 Ti) | 9.70 ms | **4.82 ms** |
+| compression | 30.73% | **32.97%** |
 
-2,01x mas rapido y +2,24 puntos, con dos cambios que **no tocan el codigo de
-entropia**: coalescer la escritura de salida, y sustituir el indice de offsets
-uint32 por longitudes de 8 bits con prefix-sum de warp.
+2.01x faster and +2.24 points, from two changes that **do not touch the
+entropy code**: coalescing the output write, and replacing the uint32 offset
+index with 8-bit lengths plus a warp prefix-sum.
 
-## Los documentos
+## The documents
 
-| Fichero | Que contiene |
+| File | What it contains |
 |---|---|
-| **[HANDOFF.md](HANDOFF.md)** | **Empezar aqui.** Estado actual, que esta medido y que no, y que hacer a continuacion. |
-| [RESULTS.md](RESULTS.md) | Registro cronologico: Fase 1 (CPU), Fase 2 (kernels), 2b (patron de acceso), 2c (vectorial e indice). Todas las tablas de numeros. |
-| [ALQUILER_GPU.md](ALQUILER_GPU.md) | Como y donde alquilar una GPU por horas para las medidas que faltan. |
-| [INSTRUCCIONES_RTX4070_WIN.md](INSTRUCCIONES_RTX4070_WIN.md) | Guia para un operador con una RTX 4070 en Windows 11. |
-| [INSTRUCCIONES_LINUX.md](INSTRUCCIONES_LINUX.md) | Lo mismo para Linux. |
-| [INSTRUCCIONES_RTX3060.md](INSTRUCCIONES_RTX3060.md) | Lo mismo para una RTX 3060 en Windows. |
+| **[HANDOFF.md](HANDOFF.md)** | **Start here.** Current status, what is measured and what is not, and what to do next. |
+| [RESULTS.md](RESULTS.md) | Chronological log: Phase 1 (CPU), Phase 2 (kernels), 2b (access pattern), 2c (vector coding and index). All the number tables. |
+| [ALQUILER_GPU.md](ALQUILER_GPU.md) | How and where to rent a GPU by the hour for the missing measurements. *(Spanish)* |
+| [INSTRUCCIONES_RTX4070_WIN.md](INSTRUCCIONES_RTX4070_WIN.md) | Guide for an operator with an RTX 4070 on Windows 11. *(Spanish)* |
+| [INSTRUCCIONES_LINUX.md](INSTRUCCIONES_LINUX.md) | Same for Linux. *(Spanish)* |
+| [INSTRUCCIONES_RTX3060.md](INSTRUCCIONES_RTX3060.md) | Same for an RTX 3060 on Windows. *(Spanish)* |
 
-## Reproducir desde cero
+## Reproduce from scratch
 
 ```bash
-# Linux / GPU alquilada
-bash setup_cloud.sh      # o setup_linux.sh en una maquina propia
+# Linux / rented GPU
+bash setup_cloud.sh      # or setup_linux.sh on your own machine
 bash run_all.sh
 ```
 
@@ -50,29 +50,29 @@ powershell -ExecutionPolicy Bypass -File setup_windows.ps1
 powershell -ExecutionPolicy Bypass -File run_all.ps1
 ```
 
-`setup_*` instala dependencias, descarga Qwen3-0.6B, extrae los pesos y
-**verifica que los kernels descomprimen bit a bit**. Si esa verificacion falla
-el script sale con error a proposito: los tiempos de un descompresor
-incorrecto no valen nada.
+`setup_*` installs dependencies, downloads Qwen3-0.6B, extracts the weights and
+**verifies that the kernels decompress bit-exactly**. If that verification
+fails the script exits with an error on purpose: timings from an incorrect
+decompressor are worthless.
 
-`run_all` ejecuta las cinco etapas de medida y empaqueta los resultados.
+`run_all` runs the five measurement stages and packages the results.
 
-## Codigo
+## Code
 
-| Fichero | Que es |
+| File | What it is |
 |---|---|
-| `ladder_codec.py`, `df11_reference.py` | Codecs de referencia en CPU (escalera y Huffman canonico). |
-| `bitpack.py` | Encoder vectorizado; produce un bitstream **byte a byte identico** al de referencia. |
-| `extract_real_weights.py` | Extrae pesos BF16 crudos de un `.safetensors` sin necesitar torch. |
-| `gpu_kernels.py` | Los dos kernels base. |
-| `kernel_opt.py` | Variantes con puesta en shared de entrada/salida. |
-| `kernel_idx8.py` | Indice de 8 bits + prefix-sum de warp. |
-| `bench_*.py` | Bancos de medida. |
-| `analysis_*.py` | Entropia conjunta, informacion mutua, coste de cada esquema de indice. |
+| `ladder_codec.py`, `df11_reference.py` | CPU reference codecs (ladder and canonical Huffman). |
+| `bitpack.py` | Vectorized encoder; produces a bitstream **byte-for-byte identical** to the reference. |
+| `extract_real_weights.py` | Extracts raw BF16 weights from a `.safetensors` without needing torch. |
+| `gpu_kernels.py` | The two baseline kernels. |
+| `kernel_opt.py` | Variants that stage input/output in shared memory. |
+| `kernel_idx8.py` | 8-bit index + warp prefix-sum. |
+| `bench_*.py` | Measurement harnesses. |
+| `analysis_*.py` | Joint entropy, mutual information, cost of each index scheme. |
 
-## Requisitos
+## Requirements
 
-- GPU NVIDIA con capacidad de computo >= 6.1 (para perfilar con Nsight
-  Compute hace falta >= 7.0: **Pascal no sirve**)
+- NVIDIA GPU with compute capability >= 6.1 (profiling with Nsight Compute
+  needs >= 7.0: **Pascal will not work**)
 - Python 3.10+
-- ~5 GB de disco
+- ~5 GB of disk

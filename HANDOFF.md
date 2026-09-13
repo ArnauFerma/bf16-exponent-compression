@@ -1,209 +1,387 @@
-# Compresion lossless de pesos BF16 — handoff
+# Lossless BF16 weight compression — handoff
 
-Documento de estado. Ultima actualizacion: **2026-09-11**.
+Status document. Last updated: **2026-09-13**.
 
-Para el registro cronologico con todas las tablas, ver [RESULTS.md](RESULTS.md).
-La version original de este handoff (antes de tener GPU) esta en el historial
-de git, commit `098cf3b`.
-
----
-
-## 0. Resumen en una frase
-
-La hipotesis original — que un **codigo por escalones** con tabla de 10 B
-rendiria mejor que la LUT jerarquica de 4 KiB de Huffman — **esta refutada**:
-pierde en los dos ejes. Pero atacando el patron de acceso a memoria y el
-indice de bloques, el codec pasa de 9,70 ms / 30,73% a **4,82 ms / 32,97%**.
+For the chronological log with all the tables, see [RESULTS.md](RESULTS.md).
+The original version of this handoff (before any GPU was available) is in git
+history, commit `098cf3b`.
 
 ---
 
-## 1. Estado de las afirmaciones
+## 0. Summary in one sentence
 
-Esto importa mas que nada: separa lo medido de lo especulado.
+The original hypothesis — that a **ladder code** with a 10 B table would beat
+Huffman's 4 KiB hierarchical LUT — **is refuted**: it loses on both axes. But
+by attacking the memory access pattern and the block index, the codec went from
+9.70 ms / 30.73% to **4.82 ms / 32.97%**.
 
-### Medido y reproducible
+---
 
-Salvo indicacion, sobre **Qwen3-0.6B real** (751.632.384 pesos BF16) y, para
-los kernels, una muestra de 64M exponentes en una **GTX 1050 Ti**.
+## 1. Status of the claims
 
-| Afirmacion | Valor | Como se verifico |
+This matters more than anything else: it separates what is measured from what
+is speculated.
+
+### Measured and reproducible
+
+Unless stated otherwise, on real **Qwen3-0.6B** (751,632,384 BF16 weights) and,
+for the kernels, a sample of 64M exponents on a **GTX 1050 Ti**.
+
+| Claim | Value | How it was verified |
 |---|---|---|
-| Entropia del exponente | 2,634 bits | Conteo exacto sobre 751,6M pesos |
-| Huffman canonico | 2,665 bits/exp -> 32,56% | Codec implementado, roundtrip bit a bit |
-| Escalera (1,1,1,2) | 2,800 bits/exp -> 31,72% | Idem, −0,85 puntos |
-| Ambos kernels GPU | roundtrip bit a bit correcto | 32M simbolos reales, 20 combinaciones BLOCK x hilos |
-| **El decodificador NO esta limitado por computo** | 8,2% del pico de ancho de banda | Kernel "suelo de memoria" con el mismo trafico |
-| Coalescer la **salida** | **1,92x** | 4 variantes compiladas para atribuir |
-| Coalescer la **entrada** | 1,01x | Nunca fue el cuello de botella |
-| Precipicio de BLOCK = efecto de L2 | cruce entre 128 y 256 | Coincide con el desbordamiento del working set, y con que la entrada en shared pase a valer 4,38x |
-| **Escalera mas lenta que Huffman** | 5% a 43% | Con el kernel optimizado, en todas las configuraciones |
-| Informacion mutua entre exponentes vecinos | **0,0002–0,0100 bits** | 6 ventanas repartidas por el modelo |
-| Modelado por contexto orden 1 | **+0,0000 bits/simbolo** | No hay correlacion que explotar |
-| Escalera sobre pares | 2,754 bits, peor que escalar (2,709) | Con tabla 25x mayor |
-| **Indice de 8 bits + prefix-sum** | **+2,25 puntos, coste nulo** | 4,82 vs 4,81 ms |
+| Exponent entropy | 2.634 bits | Exact count over 751.6M weights |
+| Canonical Huffman | 2.665 bits/exp -> 32.56% | Codec implemented, bit-exact roundtrip |
+| Ladder (1,1,1,2) | 2.800 bits/exp -> 31.72% | Same, −0.85 points |
+| Both GPU kernels | bit-exact roundtrip correct | 32M real symbols, 20 BLOCK x threads combinations |
+| **The decoder is NOT compute-bound** | 8.2% of peak bandwidth | "Memory floor" kernel with the same traffic |
+| Coalescing the **output** | **1.92x** | 4 variants compiled to attribute the gain |
+| Coalescing the **input** | 1.01x | Never was the bottleneck |
+| BLOCK cliff = L2 effect | crossover between 128 and 256 | Matches the working-set overflow, and the point where staging input in shared jumps to 4.38x |
+| **Ladder slower than Huffman** | 5% to 43% | With the optimized kernel, in every configuration |
+| Mutual information between neighbouring exponents | **0.0002–0.0100 bits** | 6 windows spread across the model |
+| Order-1 context modelling | **+0.0000 bits/symbol** | No correlation to exploit |
+| Ladder over pairs | 2.754 bits, worse than scalar (2.709) | With a 25x larger table |
+| **8-bit index + prefix-sum** | **+2.25 points, zero cost** | 4.82 vs 4.81 ms |
 
-### No medido — sigue abierto
+### Not measured — still open
 
-| Pregunta | Por que importa |
+| Question | Why it matters |
 |---|---|
-| Que pasa en una GPU con L2 grande | Todo lo anterior es Pascal con 1 MiB de L2. Ver seccion 4. |
-| Ocupacion real, stalls de warp, divergencia | Nsight Compute **no soporta Pascal**; no se ha podido medir aqui |
-| Comparacion contra los kernels publicados de DFloat11 | Solo se ha comparado contra implementacion propia |
-| tokens/s extremo a extremo (Fase 3) | "Kernel mas rapido" no es lo mismo que "inferencia mas rapida" |
-| Anomalia: con BLOCK=128 y entrada en shared, Huffman es 2x mas rapido que la escalera | Mucho mas de lo que justifica el 4,8% de diferencia de stream. Sin explicar. |
+| What happens on a GPU with a large L2 | Everything above is Pascal with 1 MiB of L2. See section 4. |
+| Real occupancy, warp stalls, divergence | Nsight Compute **does not support Pascal**; could not be measured here |
+| Comparison against DFloat11's published kernels | Only compared against our own implementation |
+| End-to-end tokens/s (Phase 3) | "Faster kernel" is not the same as "faster inference" |
+| Anomaly: at BLOCK=128 with input staged in shared, Huffman is 2x faster than the ladder | Far more than the 4.8% stream difference justifies. Unexplained. |
 
-### Descartado (callejones sin salida ya recorridos)
+### Discarded (dead ends already explored)
 
-- **Comprimir el flujo de bits crudo en grupos de 3 o 4 bits.** Entre −18% y
-  +12,6%. Muy por debajo de atacar el exponente.
-- **Indice de offsets por peso.** Cuesta ~800% del fichero.
-- **Prefix-sum global de offsets.** Problema huevo-gallina; la solucion es el
-  indice grueso por bloques.
-- **Codigos no libres de prefijo.** Cualquier tabla nueva debe pasar Kraft <= 1.
-- **Codificacion vectorial / por pares.** Medido: no hay correlacion que
-  explotar (I < 0,01 bits) y para la escalera es peor que el codigo escalar.
-- **La escalera como via de rendimiento.** Pierde en compresion y en velocidad.
+- **Compressing the raw bitstream in groups of 3 or 4 bits.** Between −18% and
+  +12.6%. Far below attacking the exponent.
+- **Per-weight offset index.** Costs ~800% of the file.
+- **Global prefix-sum of offsets.** Chicken-and-egg problem; the solution is
+  the coarse per-block index.
+- **Non-prefix-free codes.** Any new table must satisfy Kraft <= 1.
+- **Vector / pairwise coding.** Measured: there is no correlation to exploit
+  (I < 0.01 bits) and for the ladder it is worse than the scalar code.
+- **The ladder as a performance route.** It loses on compression and on speed.
+- **Computing directly on compressed data, with no decode step.** Reasoned,
+  not measured. Entropy codes are **not homomorphic**: a codeword is a
+  frequency-chosen symbol index with no arithmetic relation to the value it
+  denotes, so no operation on codewords corresponds to multiplying values. The
+  homomorphic route does exist, but it requires a scale-factor representation
+  — `Σ (s_a·a_i)(s_b·b_i) = s_a·s_b·Σ a_i·b_i`, the scales factor out of the
+  sum — which is precisely what INT8/INT4 quantization is, and it is lossy.
+  Related trilemma, worth keeping in mind: *fixed symbols per block* gives
+  variable bits and needs an index (what we do); *fixed bits per block* gives
+  O(1) addressing but you no longer know which weights live in a block;
+  *fixed in both* is a fixed-rate code, i.e. no entropy coding at all (GPU
+  texture formats like BC/ASTC are the existence proof — and they are lossy).
+  Pick two. Losslessness closes the third corner, so the index is not
+  avoidable. The reachable goal is making the decoder never touch DRAM (GEMM
+  fusion), not deleting it.
 
 ---
 
-## 2. El formato, tal como esta ahora
+## 2. The format, as it stands
 
-BF16 = `[1 signo][8 exponente][7 mantisa]`. Signo y mantisa se guardan crudos,
-empaquetados en 1 byte por peso. Solo se codifica el exponente.
+BF16 = `[1 sign][8 exponent][7 mantissa]`. Sign and mantissa are stored raw,
+packed into 1 byte per weight. Only the exponent is coded.
 
 ```
-cabecera        : magic, version, n_pesos, BLOCK, tabla de codigos
-sign_mantisa    : n_pesos bytes, crudos
-exponentes      : bitstream Huffman canonico
-indice          : ver abajo
+header          : magic, version, n_weights, BLOCK, code table
+sign_mantissa   : n_weights bytes, raw
+exponents       : canonical Huffman bitstream
+index           : see below
 ```
 
-**Indice (cambiado en la Fase 2c).** En vez de un offset absoluto uint32 por
-bloque (4 B/bloque):
+**Index (changed in Phase 2c).** Instead of one absolute uint32 offset per
+block (4 B/block):
 
-- un **uint32 por superbloque** de 32 bloques (= un warp) -> 0,125 B/bloque
-- un **uint8 por bloque** con su longitud en bits, menos un minimo global
-  -> 1,0 B/bloque
+- one **uint32 per superblock** of 32 blocks (= one warp) -> 0.125 B/block
+- one **uint8 per block** holding its length in bits, minus a global minimum
+  -> 1.0 B/block
 
-Total **1,125 B/bloque**. El offset de cada bloque se recupera con un
-prefix-sum exclusivo dentro del warp (5 pasos de `__shfl_up_sync`, coste no
-medible). Cabe en 8 bits porque la longitud de bloque tiene poco rango: con
-BLOCK=64, de 130 a 273 bits.
+Total **1.125 B/block**. Each block's offset is recovered with an exclusive
+prefix-sum within the warp (5 steps of `__shfl_up_sync`, cost not measurable).
+It fits in 8 bits because block length has little spread: at BLOCK=64, from
+130 to 273 bits.
 
-**Limitacion:** solo llega hasta BLOCK=128. Con BLOCK=256 el rango es 409 y no
-cabe; haria falta la variante de 16 bits relativos (2,016 B/bloque).
-
----
-
-## 3. Lo que aprendio el proyecto
-
-Vale la pena decirlo explicitamente, porque es lo contrario de lo que se
-esperaba:
-
-> Los dos cambios **estructurales** (patron de acceso e indice) valen **2x de
-> velocidad y +2,24 puntos**. La pregunta sobre el **codigo de entropia**,
-> alrededor de la cual se construyo el proyecto entero, vale 0,85 puntos, y en
-> contra.
-
-La codificacion de entropia esta, a efectos practicos, terminada: Huffman se
-queda a 0,031 bits del suelo teorico y no hay correlacion que explotar. Todo
-el margen que queda es estructural.
-
-La duda que el handoff original ya planteaba resulto ser la correcta:
-
-> *"Huffman canonico usa LUT: un acceso a SRAM. La escalera usa `clz` + rama +
-> shift + mask. Contando instrucciones puede perder."*
-
-Pierde.
+**Limitation:** it only reaches BLOCK=128. At BLOCK=256 the spread is 409 and
+does not fit; that would need the relative 16-bit variant (2.016 B/block).
 
 ---
 
-## 4. Lo siguiente, por orden de valor
+## 3. What the project learned
 
-### 4.1 Medir en una GPU con L2 grande — BLOQUEANTE para publicar nada
+Worth stating explicitly, because it is the opposite of what was expected:
 
-Todo lo medido es Pascal con 1 MiB de L2. La cifra que gobierna el precipicio
-de BLOCK es la **L2 por hilo residente**:
+> The two **structural** changes (access pattern and index) are worth **2x in
+> speed and +2.24 points**. The **entropy code** question, around which the
+> entire project was built, is worth 0.85 points — and in the wrong direction.
 
-| tarjeta | L2 | SMs | hilos residentes | **L2 / hilo** |
+Entropy coding is, for practical purposes, finished here: Huffman lands 0.031
+bits from the theoretical floor and there is no correlation left to exploit.
+All remaining headroom is structural.
+
+The doubt the original handoff already raised turned out to be the right one:
+
+> *"Canonical Huffman uses a LUT: one SRAM access. The ladder uses `clz` +
+> branch + shift + mask. On instruction count it may lose."*
+
+It loses.
+
+---
+
+## 4. What is next, in order of value
+
+### 4.1 Measure on a GPU with a large L2 — BLOCKING for publishing anything
+
+Everything measured is Pascal with 1 MiB of L2. The figure that governs the
+BLOCK cliff is **L2 per resident thread**:
+
+| card | L2 | SMs | resident threads | **L2 / thread** |
 |---|---|---|---|---|
-| GTX 1050 Ti (la de casa) | 1 MB | 6 | 12.288 | 85 B |
-| RTX 3060 | 3 MB | 28 | 43.008 | 73 B |
-| A100 80GB | 40 MB | 108 | 221.184 | 190 B |
-| H100 SXM | 50 MB | 132 | 270.336 | 194 B |
-| RTX 4090 | 72 MB | 128 | 196.608 | 384 B |
-| RTX 4070 | 36 MB | 46 | 70.656 | 534 B |
+| GTX 1050 Ti (the home one) | 1 MB | 6 | 12,288 | 85 B |
+| RTX 3060 | 3 MB | 28 | 43,008 | 73 B |
+| A100 80GB | 40 MB | 108 | 221,184 | 190 B |
+| H100 SXM | 50 MB | 132 | 270,336 | 194 B |
+| RTX 4090 | 72 MB | 128 | 196,608 | 384 B |
+| RTX 4070 | 36 MB | 46 | 70,656 | 534 B |
 
-> **Prediccion registrada antes de medir:** en una tarjeta con L2 grande el
-> precipicio de BLOCK **deberia desaparecer**; con BLOCK=1024 el working set
-> residente son 24,5 MB (cabe en 36 MB de una 4070, no cabe en 1 MB). La
-> entrada en shared deberia dejar de importar, y BLOCK=512-1024 deberia pasar
-> a ser viable: la primera configuracion donde coinciden la mejor compresion y
-> buena velocidad.
+> **Prediction recorded before measuring:** on a card with a large L2 the BLOCK
+> cliff **should disappear**; at BLOCK=1024 the resident working set is 24.5 MB
+> (fits in a 4070's 36 MB, does not fit in 1 MB). Staging input in shared
+> should stop mattering, and BLOCK=512-1024 should become viable: the first
+> configuration where the best compression and good speed coincide.
 >
-> **Si el precipicio sigue ahi, la explicacion de la L2 es falsa** y hay que
-> reescribir la Fase 2b antes de que nada de esto salga del repo.
+> **If the cliff is still there, the L2 explanation is false** and Phase 2b has
+> to be rewritten before any of this leaves the repo.
 
-Como hacerlo: [ALQUILER_GPU.md](ALQUILER_GPU.md) (~1,40 USD, menos de una
-hora) o las guias para operador con maquina prestada.
+How to do it: [ALQUILER_GPU.md](ALQUILER_GPU.md) (~1.40 USD, under an hour) or
+the operator guides for a borrowed machine.
 
-### 4.2 Salida BF16 fusionada
+### 4.2 Cross-field mutual information — cheap, and it bounds a public claim
 
-Hoy el kernel emite un byte de exponente por peso y hace falta una pasada
-aparte para mezclar signo+mantisa: 64 MB + 64 MB leidos y 128 MB escritos =
-**256 MB, casi 3x el propio kernel de decodificacion (88,7 MB)**. Fusionarla
-baja el trafico total del pipeline de ~345 MB a ~217 MB (−37%) y quita un
-lanzamiento entero. Necesario para la Fase 3 de todos modos.
+Phase 2c measured mutual information between **neighbouring** exponents (≈0,
+max 0.00998 bits). It never measured correlation **between the fields of the
+same weight**:
 
-### 4.3 Indice de 16 bits para BLOCK >= 256
+```
+I(exp; mant) = H(exp) + H(mant) − H(exp, mant)
+```
 
-El de 8 bits no llega. La variante relativa de 16 bits da 2,016 B/bloque
-(+1,94 puntos con BLOCK=256). Util si 4.1 confirma que BLOCK grande es viable.
+That quantity is exactly the gap between the field-split scheme used here and a
+full-alphabet coder. It matters because arXiv 2606.15789 treats BF16 as a
+**monolithic 16-bit symbol alphabet**, and joint entropy is subadditive:
 
-### 4.4 Huffman sobre pares
+```
+H(sign, exp, mant) <= H(sign) + H(exp) + H(mant)
+```
 
-Reduce a la mitad las iteraciones de la cadena serie, que es el cuello de
-botella real, y ademas es 0,0164 bits/simbolo mas pequeno. Coste: LUT de
-8 KiB. Especulativo pero barato de probar.
+So a full-alphabet coder can never be worse on rate, and is better exactly to
+the extent the fields correlate. Until this is measured, we cannot say how much
+rate the field split gives away — only that it gives away >= 0.
 
-### 4.5 Comparar contra DFloat11
+Two outcomes, both useful:
 
-Esta publicado y trae kernels. Es la comparacion que cualquier revisor
-exigiria, y es la que mas trabajo cuesta.
+- **≈0** — the field split costs nothing, 10.806 bits/weight really is near the
+  true floor for this model, and that can be stated with a measurement behind
+  it instead of an assumption.
+- **non-zero** — it is the exact size of the headroom needed to match a
+  full-alphabet coder, and therefore the honest ceiling on any rate claim.
+
+Cost: CPU only, on data already sitting in `outputs/`; `analysis_vector.py`
+already computes joint entropies. Given the mantissa measured 6.972 bits of 7,
+the expectation is that it comes out small — but the ladder was also expected
+to win.
+
+### 4.3 Fused BF16 output
+
+Today the kernel emits one exponent byte per weight and a separate pass is
+needed to merge sign+mantissa: 64 MB + 64 MB read and 128 MB written =
+**256 MB, almost 3x the decode kernel itself (88.7 MB)**. Fusing it drops total
+pipeline traffic from ~345 MB to ~217 MB (−37%) and removes an entire launch.
+Needed for Phase 3 regardless.
+
+### 4.4 16-bit index for BLOCK >= 256
+
+The 8-bit one does not reach. The relative 16-bit variant gives 2.016 B/block
+(+1.94 points at BLOCK=256). Useful if 4.1 confirms that large BLOCK is viable.
+
+### 4.5 Huffman over pairs
+
+Halves the iterations of the serial chain, which is the real bottleneck, and is
+also 0.0164 bits/symbol smaller. Cost: an 8 KiB LUT. Speculative but cheap to
+try.
+
+### 4.6 Compare against DFloat11 — and against the real frontier
+
+It is published and ships kernels. It is the comparison any reviewer would
+demand, and the one that costs the most work.
+
+**Warning (2026-09-13):** DFloat11 is no longer the state of the art. arXiv
+2606.15789 beats it by up to 11x by fusing rANS decompression inside the GEMM.
+Beating DFloat11 is no longer enough to publish; see section 6.
 
 ---
 
-## 5. Trampas ya pisadas, para no repetirlas
+## 5. Traps already hit, so as not to repeat them
 
-- Un codigo sin Kraft <= 1 es indescifrable aunque parezca que funciona en
-  algunos casos de prueba.
-- Extrapolar un porcentaje de ahorro de un tipo de datos a otro no vale.
-- Una tabla plana desperdicia el sesgo de la distribucion.
-- **Un `return` temprano antes de `__syncthreads()` es comportamiento
-  indefinido.** Costo salida incorrecta no determinista en la escalera con
-  BLOCK=512/1024. Todos los hilos del bloque deben llegar a la barrera.
-- **Verificar bit a bit ANTES de cronometrar, nunca despues.** Un kernel que
-  escribe fuera de su shared puede dar resultados casi correctos y un tiempo
-  halagador.
-- **No combinar optimizaciones sin medirlas por separado.** Entrada + salida
-  en shared es *peor* que solo salida: la entrada gasta shared y una barrera
-  sin comprar nada.
-- Los relojes de una GPU consumer no se pueden fijar bajo Windows/WDDM. Hay
-  que compensar con calentamiento sostenido, mediana y orden aleatorizado — y
-  cerrar todo lo que use la GPU.
-- Nsight Compute no soporta Pascal (retirado en 2020.1). No se puede perfilar
-  una 1050 Ti con ninguna version actual.
+- A code without Kraft <= 1 is undecodable even if it appears to work on some
+  test cases.
+- Extrapolating a saving percentage from one data type to another is invalid.
+- A flat table wastes the skew of the distribution.
+- **An early `return` before `__syncthreads()` is undefined behaviour.** It
+  cost non-deterministic incorrect output in the ladder at BLOCK=512/1024.
+  Every thread in the block must reach the barrier.
+- **Verify bit-exactness BEFORE timing, never after.** A kernel that writes
+  outside its shared memory can give almost-correct results and a flattering
+  time.
+- **Do not combine optimizations without measuring them separately.** Input +
+  output in shared is *worse* than output alone: the input spends shared memory
+  and a barrier without buying anything.
+- Consumer GPU clocks cannot be locked under Windows/WDDM. Compensate with
+  sustained warm-up, median, and randomized order — and close everything else
+  using the GPU.
+- Nsight Compute does not support Pascal (dropped in 2020.1). A 1050 Ti cannot
+  be profiled with any current version.
 
 ---
 
-## 6. Estado del arte
+## 6. State of the art
 
-**DFloat11** (NeurIPS 2025, arXiv 2504.11651,
-github.com/LeanModels/DFloat11) hace lo mismo: Huffman sobre los exponentes
-BF16, signo y mantisa intactos, ~30% de reduccion bit a bit identica. Usa LUT
-jerarquicas en SRAM, kernel de dos fases y un array de *gaps* con el offset en
-bits de cada hilo — equivalente al indice de bloques de aqui.
+Reviewed **2026-09-13**. The field has moved: **DFloat11 is no longer the
+frontier**, which changes the premise of section 4.6.
 
-**Esto no es competencia con DFloat11.** Y su array de gaps tiene exactamente
-la estructura que el indice de 8 bits mejora, asi que la via de contribucion
-mas directa es abrir un issue o PR alli con esa medida.
+### DFloat11 — the direct reference
+
+NeurIPS 2025, arXiv 2504.11651, github.com/LeanModels/DFloat11. Does the same
+thing as here: Huffman over BF16 exponents, sign and mantissa untouched, ~30%
+bit-exact reduction. Hierarchical LUTs in SRAM, a two-phase kernel, and a
+*gaps* array holding each thread's bit offset — equivalent to the block index
+here, and with exactly the structure the 8-bit index improves on.
+
+Cost they report: **~40% to 2x slower than BF16 at batch 1**, parity (1.02x) at
+batch 128, because decompression is constant per forward pass.
+
+### The current frontier
+
+**Approaching Shannon Bound with Lossless LLM Weight Compression**
+(arXiv 2606.15789, June 2026). Uses **rANS, not Huffman**, with decompression
+*fused inside the GEMM pipeline*: compression tiles match the GEMM geometry and
+are decoded into shared memory while computation proceeds.
+
+| | |
+|---|---|
+| vs DFloat11 | **up to 11x more throughput** |
+| BF16 | to ~11-12 bits |
+| INT8 / INT4-FP4 | ~4-5 bits / within 0.01-0.1 bits of the Shannon limit |
+| End-to-end | Qwen-14B 1.1-1.2x; Mixtral-176B 1.6x (batch 20 -> 95) |
+
+The decisive part: compression goes from being a **tax** to being a net
+**gain**.
+
+Their **only** stated objection to Huffman is the rate floor: *"Huffman coding
+is fast but limited by integer-length codes, leaving nontrivial gaps to the
+Shannon limit."* They do **not** claim Huffman cannot do tile-granular random
+access, and it would be wrong if they did — see below.
+
+**Random access is not the differentiator.** Their tiles get random access the
+same way our blocks do: independent units plus an offset table. *"Each tile is
+then entropy-encoded using ANS with an independently initialized state while
+sharing the same per-layer codebook"*, with *"a compact offset entry [...] in
+the tile index table"*. Raw rANS is in fact LIFO — encoded forward, decoded
+backward — so it has **less** inherent seekability than a Huffman bitstream.
+Our 8-bit delta + warp prefix-sum (1.125 B/block) is a tighter version of the
+same idea.
+
+What genuinely differs, in order of relevance to us:
+
+1. **Interleaving buys coalescing in the format.** *"Because the compressed
+   streams are interleaved across lanes, these renormalization loads are
+   naturally coalesced in global memory."* Interleaved rANS round-robins N
+   lanes through one buffer, so a warp's loads are adjacent by construction —
+   the problem we fixed in the *kernel* with shared-memory staging for 1.92x.
+2. **Per-unit state cost.** An rANS decoder state is one register; Huffman
+   needs a resident 4 KiB LUT. At tile granularity with per-tile distributions
+   this scales badly — the same wall found in Phase 2c (31 x 4 KiB = 124 KiB,
+   over the 48 KiB shared budget).
+3. **The rate floor**, which is weak for our data (98.8% efficiency).
+
+### Rate comparison — we are NOT ahead of them
+
+Tempting misreading to avoid. They report BF16 *"effective entropy of only
+10-12 bits"* and *"about 4-5 bits of redundancy, corresponding to a potential
+1.5x reduction"*. Ours is 10.806 bits/weight achieved (8 raw + 2.665 exponent +
+0.141 index). Those brackets overlap, but the comparison does not hold:
+
+- **Different models.** Ours is Qwen3-0.6B; they test Qwen-1.5B through
+  Llama-405B. A 0.6B model being more compressible is unremarkable.
+- **Entropy vs achieved.** Their 10-12 bits is a floor; our 10.806 is a result.
+- **Decisive: they treat BF16 as a monolithic 16-bit alphabet**, we code fields
+  separately. By subadditivity a full-alphabet coder can never be worse on
+  rate, so on the same model they would land at or below our floor. **Their
+  approach dominates ours on rate by construction.** Section 4.2 measures how
+  much that costs us.
+
+What can honestly be claimed is narrower and still worth stating: we are
+**0.031 bits from the theoretical floor of exponent-only BF16 coding**. That is
+a completeness result about this approach, not a state-of-the-art claim. And
+rate was never the contested axis — they are up to 11x faster.
+
+**Float8@2bits / EntQuant** (arXiv 2601.22787, January 2026). ANS via nvCOMP,
+1.5-2x slower than BF16, i.e. **matching NF4's speed**. Observes that entropy
+coding was historically seen as "a passive storage optimization, applied
+offline", not as part of the inference pipeline.
+
+**EntroLLM** (arXiv 2505.02380). Huffman over already-quantized weights, for
+edge devices. Decodes **once per sequence on CPU** (1.66 s for uint4) and
+amortizes it. A different deployment model; not per-forward-pass decompression.
+
+### Why production quantization does not use entropy codes
+
+GGUF, GPTQ, AWQ and NF4 are all **fixed-width**. The reason usually cited is
+"Huffman is slow", and it is imprecise. The real one: **variable-length codes
+destroy random access**. With fixed width you address weight N directly and
+fuse dequantization inside the GEMM, in-register and on the fly. With variable
+length you cannot know where symbol N starts without decoding everything before
+it, which forces you to decompress to memory and multiply afterwards — a full
+extra round trip.
+
+**Our own measurements confirm this from the other side**: the decoder is
+memory-bound (8.2% of peak), coalescing the output was worth 1.92x, and the
+choice of entropy code was worth almost nothing.
+
+### What this implies for this project
+
+1. The objection "Huffman is not used because it is slow" is about **lossy
+   fixed-width quantization**. What is done here is **lossless** compression,
+   where the entropy code is the whole game and Huffman is the incumbent.
+2. The main finding here — access pattern and index dominate, the entropy code
+   does not — is **independently corroborated** by 2606.15789, which is exactly
+   what they exploit.
+3. The structural ceiling of the current design is that it is a **standalone
+   decompression kernel**. Without GEMM fusion you pay the full memory round
+   trip, and that is the difference between 2.01x and 11x.
+4. **The 11x is not the entropy coder.** They attribute it to fusion:
+   *"eliminates global-memory materialization of decompressed layers and
+   overlaps decompression with tensor-core computation"*, with tile-alignment
+   worth x3.3-8.2 and double-buffering on top (x4.0-10.1 total over naive).
+   ANS makes tile granularity affordable; it is not what makes it fast.
+5. So the case for switching to ANS **here** is weak. Our exponents are 2.634
+   bits of entropy and Huffman delivers 2.665 — **98.8% efficiency** — so the
+   Shannon-gap argument buys almost nothing (it is strong for INT4/FP4, where
+   gaps run 6-10x). The plausible move is to **keep canonical Huffman and go
+   after fusion**, optionally borrowing the interleaved-stream layout for
+   coalescing. That would test the same structural hypothesis at far lower
+   cost than a codec rewrite.
+
+### Historical context and others
+
+- **Deep Compression** (Han et al., arXiv 1510.00149, 2015). The classic:
+  pruning + quantization + Huffman, 20-30% extra. CNN era, aimed at storage and
+  not at inference speed.
+- **MLX issue #3043** (January 2026). Open request for rANS quantization: there
+  is demand from implementers.
+- **Recoil** (arXiv 2306.12141). Parallel rANS decoding, useful if the ANS
+  route is explored.
