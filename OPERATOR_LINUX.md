@@ -91,7 +91,7 @@ By default the driver only lets root read the counters. Two options:
 ## Step 3 — Get the code and prepare
 
 ```bash
-git clone https://github.com/FixemBCN/bf16-exponent-compression.git ~/bf16
+git clone https://github.com/ArnauFerma/bf16-exponent-compression.git ~/bf16
 cd ~/bf16
 bash setup_linux.sh
 ```

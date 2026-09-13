@@ -95,7 +95,7 @@ instance.
 5. Get the code onto the pod. Either:
    - clone it (the pod has internet):
      ```bash
-     git clone https://github.com/FixemBCN/bf16-exponent-compression.git ~/bf16
+     git clone https://github.com/ArnauFerma/bf16-exponent-compression.git ~/bf16
      ```
    - or upload a zip of the repository: in **JupyterLab**, drag it into the
      file browser on the left; or with **runpodctl** on the source PC,

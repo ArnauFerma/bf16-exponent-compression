@@ -5,7 +5,7 @@ type: software
 authors:
   - family-names: "Ferrerons Manich"
     given-names: "Arnau"
-repository-code: "https://github.com/FixemBCN/bf16-exponent-compression"
+repository-code: "https://github.com/ArnauFerma/bf16-exponent-compression"
 date-released: 2026-09-13
 abstract: >-
   Lossless compression of BF16 model weights by entropy-coding the exponent
