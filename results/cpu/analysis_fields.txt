@@ -1,0 +1,42 @@
+weights: 596,049,920   distinct 16-bit values: 7,506 of 65,536
+
+entropies (bits)
+  H(sign)               1.0000
+  H(exp)                2.6450
+  H(mant)               6.9729
+  H(exp, mant)          9.5782
+  H(sign, exp)          3.6449
+  H(sign, mant)         7.9729
+  H(sign, exp, mant)   10.5781   (= H of the 16-bit value)
+  sum of marginals     10.6180
+
+mutual information (bits/weight)
+  I(exp; mant)          0.0398
+  I(sign; exp)          0.0001
+  I(sign; mant)         0.0000
+  field-split gap       0.0399   = H(sign)+H(exp)+H(mant) - H(sign,exp,mant)
+
+achieved with canonical Huffman (bits/weight, no index)
+  field split: 1 + 7 + Huffman(exp)    10.6777   (exp: 2.6777 bits, 43 symbols, maxlen 30)
+  full 16-bit alphabet Huffman         10.6021   (7,506 symbols, maxlen 29)
+  difference                            0.0756   (0.47 points of the 16 bits)
+
+where the difference comes from (bits/weight)
+  true floor H(sign, exp, mant)                  10.5781
+  + mutual information between fields             0.0399
+  + sign and mantissa stored raw above entropy    0.0271
+  + Huffman redundancy on the exponent            0.0327
+  = field split achieved                         10.6777
+  full alphabet: floor + Huffman redundancy      10.5781 + 0.0240 = 10.6021
+
+mantissa entropy conditional on exponent (top exponents by mass)
+  exp=121  mass= 29.41%   H(mant | exp)=6.9809
+  exp=122  mass= 21.19%   H(mant | exp)=6.8401
+  exp=120  mass= 21.19%   H(mant | exp)=6.9975
+  exp=119  mass= 12.02%   H(mant | exp)=6.9994
+  exp=118  mass=  6.26%   H(mant | exp)=6.9995
+  exp=123  mass=  3.47%   H(mant | exp)=6.2551
+  exp=117  mass=  3.17%   H(mant | exp)=6.9996
+  exp=116  mass=  1.59%   H(mant | exp)=6.9996
+
+exact zeros (+0 and -0): 0  (0.0000% of weights)

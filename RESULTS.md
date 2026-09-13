@@ -502,3 +502,97 @@ remaining headroom is structural.
 | `bench_idx8.py` | uint32 vs uint8+prefix-sum: time and compression. |
 | `analysis_vector.py` | Joint entropy, mutual information, Huffman/ladder over pairs. |
 | `analysis_index.py` | Mutual information by window and cost of each index scheme. |
+
+---
+
+# Phase 2d — Cross-field mutual information (CPU)
+
+## Question
+
+The format codes the exponent and stores sign and mantissa raw. A coder over
+the whole 16-bit symbol can never be worse on rate, because joint entropy is
+subadditive: `H(sign, exp, mant) <= H(sign) + H(exp) + H(mant)`. The gap is
+the mutual information between the fields, and until now it had not been
+measured — HANDOFF 4.2 flagged it as the honest ceiling on any rate claim.
+arXiv 2606.15789 codes the full 16-bit alphabet, so this is also the exact
+amount by which their approach dominates this one on rate, before any
+difference in entropy coder.
+
+## Method
+
+Exact, not sampled: the full alphabet has 65,536 symbols, so one `bincount`
+over all 596,049,920 unique weights gives the joint histogram, and every
+marginal and pair histogram is derived from it (`analysis_fields.py`, 6 s on
+the dev machine; log in `results/cpu/analysis_fields.txt`).
+
+## Entropies and mutual information
+
+| | bits/weight |
+|---|---|
+| H(sign) | 1.0000 |
+| H(exp) | 2.6450 |
+| H(mant) | 6.9729 |
+| H(sign) + H(exp) + H(mant) | 10.6180 |
+| **H(sign, exp, mant)** — the true floor | **10.5781** |
+| I(exp; mant) | **0.0398** |
+| I(sign; exp) | 0.0001 |
+| I(sign; mant) | 0.0000 |
+
+Only 7,506 of the 65,536 possible 16-bit values occur.
+
+**Where the dependence lives.** Mantissa entropy conditional on the exponent,
+for the exponents carrying most of the mass:
+
+| exp | mass | H(mant \| exp) |
+|---|---|---|
+| 121 | 29.4% | 6.981 |
+| 122 | 21.2% | **6.840** |
+| 120 | 21.2% | 6.998 |
+| 119 | 12.0% | 6.999 |
+| 118 | 6.3% | 6.999 |
+| 123 | 3.5% | **6.255** |
+| 117 | 3.2% | 7.000 |
+
+The mantissa is uniform (7.00 bits) everywhere except in the two largest
+binades, 122 and 123, where the Gaussian tail decays *within* the binade and
+small mantissas are more likely. That is the entire 0.04 bits. Below the
+mode the mantissa carries no information about the exponent at all.
+
+## Achieved rates, and the exact decomposition
+
+| canonical Huffman, no index | bits/weight |
+|---|---|
+| field split: 1 + 7 + Huffman(exp), 43 symbols, maxlen 30 | 10.6777 |
+| full 16-bit alphabet, 7,506 symbols, maxlen 29 | **10.6021** |
+| difference | **0.0756 = 0.47 points** |
+
+The difference decomposes exactly into three parts:
+
+| | bits/weight |
+|---|---|
+| true floor H(sign, exp, mant) | 10.5781 |
+| + mutual information between fields | 0.0399 |
+| + sign and mantissa stored raw, above their entropy | 0.0271 |
+| + Huffman redundancy on the exponent alphabet | 0.0327 |
+| = field split achieved | 10.6777 |
+| full alphabet: floor + Huffman redundancy (0.0240) | 10.6021 |
+
+## What this settles
+
+- **The honest rate claim** for this design is: **0.033 bits/weight above
+  the exponent-only floor, 0.100 bits/weight above the true floor of the
+  16-bit symbol**, of which 0.076 (0.47 points of compression) a
+  full-alphabet canonical Huffman recovers on this model.
+- **Entropy coding is finished *within the field split***; it is not
+  finished in absolute terms. Crossing to the full alphabet is worth 0.47
+  points — more than half the ladder-vs-Huffman gap the project was built
+  around — at the price of a 7,506-symbol code table instead of 43, which
+  changes the decoder's LUT budget and is a different design.
+- **2606.15789's rate advantage over this approach is bounded at 0.076
+  bits/weight on this model** before any credit for rANS over Huffman;
+  their remaining advantage is the fusion, as HANDOFF section 6 argued.
+- The 0.040 bits of exp–mant dependence is real but concentrated: a coder
+  that treated only exponents 122 and 123 jointly with their mantissa, and
+  everything else as now, would capture nearly all of it with a small table.
+  Not measured; recorded as the cheapest way to close most of the gap.
+

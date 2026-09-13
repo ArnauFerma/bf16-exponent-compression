@@ -244,8 +244,15 @@ estimated from a sample.
 - Order-1 context model: `H(Y | X)` from the same joint histogram.
 - "Huffman over pairs" rate: canonical Huffman built on the pair alphabet
   (421 pairs observed in the sample), rate computed analytically.
+- **Cross-field mutual information (Phase 2d):** one exact histogram of the
+  full 16-bit value over all 596,049,920 unique weights (65,536 bins); every
+  marginal and pair histogram (sign, exp, mant, exp×mant, sign×exp,
+  sign×mant) is derived from it by re-binning, so all entropies and mutual
+  informations are exact. Canonical Huffman rates on the exponent alphabet
+  and on the full 16-bit alphabet are computed analytically from the same
+  counts.
 
-Scripts: `analysis_vector.py`, `analysis_index.py`.
+Scripts: `analysis_vector.py`, `analysis_index.py`, `analysis_fields.py`.
 
 ## 8. Threats to validity
 
@@ -313,7 +320,8 @@ Committed under `results/`, one directory per machine, so every table in
 RESULTS.md can be checked against the log it was transcribed from:
 
 - `results/cpu/` — Phase 1: `bench_results.json`, `bench_log.txt`, and the
-  extractor's log, all from the deduplicated re-run. `*.pre-dedup.*` are the
+  extractor's log, all from the deduplicated re-run; `analysis_fields.txt`
+  is the Phase 2d log. `*.pre-dedup.*` are the
   same outputs from the original run with `lm_head` counted twice, kept so
   the pre-correction tables in git history can be audited too. Produced on
   the dev machine.

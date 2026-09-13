@@ -43,6 +43,8 @@ for the kernels, a sample of 64M exponents on a **GTX 1050 Ti**.
 | Order-1 context modelling | **+0.0000 bits/symbol** | No correlation to exploit |
 | Ladder over pairs | 2.754 bits, worse than scalar (2.709) | With a 25x larger table |
 | **8-bit index + prefix-sum** | **+2.25 points, zero cost** | 4.82 vs 4.81 ms |
+| Mutual information between the BF16 fields | I(exp; mant) = **0.040 bits/weight**; sign independent of both | Exact joint histogram over all 596M unique weights |
+| Field split vs full-alphabet Huffman | **0.076 bits/weight = 0.47 points** given away | Both rates computed analytically from exact counts (Phase 2d) |
 
 ### Not measured — still open
 
@@ -120,9 +122,11 @@ Worth stating explicitly, because it is the opposite of what was expected:
 > speed and +2.25 points**. The **entropy code** question, around which the
 > entire project was built, is worth 0.86 points — and in the wrong direction.
 
-Entropy coding is, for practical purposes, finished here: Huffman lands 0.033
-bits from the theoretical floor and there is no correlation left to exploit.
-All remaining headroom is structural.
+Entropy coding is finished *within the field split*: Huffman lands 0.033
+bits from the exponent-only floor and neighbouring exponents are independent.
+Phase 2d bounds what the split itself gives away: 0.076 bits/weight
+(0.47 points) against a full-alphabet Huffman, almost all of it in the two
+largest binades. Everything beyond that is structural.
 
 The doubt the original handoff already raised turned out to be the right one:
 
@@ -161,40 +165,22 @@ BLOCK cliff is **L2 per resident thread**:
 How to do it: [RENT_A_GPU.md](RENT_A_GPU.md) (~1.40 USD, under an hour) or
 the operator guides for a borrowed machine.
 
-### 4.2 Cross-field mutual information — cheap, and it bounds a public claim
+### 4.2 Cross-field mutual information — DONE (Phase 2d, 2026-09-13)
 
-Phase 2c measured mutual information between **neighbouring** exponents (≈0,
-max 0.00998 bits). It never measured correlation **between the fields of the
-same weight**:
+Measured exactly over all unique weights: **I(exp; mant) = 0.040
+bits/weight**, sign independent of both. A full-alphabet canonical Huffman
+achieves 10.602 bits/weight against 10.678 for the field split: **0.076
+bits/weight, 0.47 points, is what the split gives away** on this model. The
+dependence sits entirely in the two largest binades (exponents 122 and 123),
+where the Gaussian tail decays within the binade. Details and the exact
+decomposition in RESULTS.md, Phase 2d.
 
-```
-I(exp; mant) = H(exp) + H(mant) − H(exp, mant)
-```
-
-That quantity is exactly the gap between the field-split scheme used here and a
-full-alphabet coder. It matters because arXiv 2606.15789 treats BF16 as a
-**monolithic 16-bit symbol alphabet**, and joint entropy is subadditive:
-
-```
-H(sign, exp, mant) <= H(sign) + H(exp) + H(mant)
-```
-
-So a full-alphabet coder can never be worse on rate, and is better exactly to
-the extent the fields correlate. Until this is measured, we cannot say how much
-rate the field split gives away — only that it gives away >= 0.
-
-Two outcomes, both useful:
-
-- **≈0** — the field split costs nothing, 10.818 bits/weight really is near the
-  true floor for this model, and that can be stated with a measurement behind
-  it instead of an assumption.
-- **non-zero** — it is the exact size of the headroom needed to match a
-  full-alphabet coder, and therefore the honest ceiling on any rate claim.
-
-Cost: CPU only, on data already sitting in `outputs/`; `analysis_vector.py`
-already computes joint entropies. Given the mantissa measured 6.972 bits of 7,
-the expectation is that it comes out small — but the ladder was also expected
-to win.
+Consequence for claims: the design is 0.033 bits from the *exponent-only*
+floor and 0.100 bits from the *true* floor (10.578). The 0.47 points is the
+ceiling on any rate improvement that stays lossless and per-weight; it is
+also the bound on 2606.15789's rate advantage before any credit for rANS.
+The cheapest way to close most of it would be a joint exp+mant code for
+exponents 122–123 only; not measured.
 
 ### 4.3 Fused BF16 output
 
@@ -322,13 +308,17 @@ Tempting misreading to avoid. They report BF16 *"effective entropy of only
 - **Decisive: they treat BF16 as a monolithic 16-bit alphabet**, we code fields
   separately. By subadditivity a full-alphabet coder can never be worse on
   rate, so on the same model they would land at or below our floor. **Their
-  approach dominates ours on rate by construction.** Section 4.2 measures how
-  much that costs us.
+  approach dominates ours on rate by construction.** Phase 2d measured how
+  much: **0.076 bits/weight (0.47 points)** on Qwen3-0.6B, of which 0.040 is
+  mutual information between the fields and the rest is the raw mantissa and
+  Huffman granularity.
 
 What can honestly be claimed is narrower and still worth stating: we are
-**0.033 bits from the theoretical floor of exponent-only BF16 coding**. That is
-a completeness result about this approach, not a state-of-the-art claim. And
-rate was never the contested axis — they are up to 11x faster.
+**0.033 bits from the theoretical floor of exponent-only BF16 coding**, and
+**0.100 bits from the true floor of the 16-bit symbol**, with the gap now
+measured rather than assumed. That is a completeness result about this
+approach, not a state-of-the-art claim. And rate was never the contested axis
+— they are up to 11x faster.
 
 **Float8@2bits / EntQuant** (arXiv 2601.22787, January 2026). ANS via nvCOMP,
 1.5-2x slower than BF16, i.e. **matching NF4's speed**. Observes that entropy

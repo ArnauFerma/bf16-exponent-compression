@@ -38,7 +38,7 @@ average; both figures are given above and the difference is explained in
 | File | What it contains |
 |---|---|
 | **[HANDOFF.md](HANDOFF.md)** | **Start here.** Current status, what is measured and what is not, and what to do next. |
-| [RESULTS.md](RESULTS.md) | Chronological log: Phase 1 (CPU), Phase 2 (kernels), 2b (access pattern), 2c (vector coding and index). All the number tables. |
+| [RESULTS.md](RESULTS.md) | Chronological log: Phase 1 (CPU), Phase 2 (kernels), 2b (access pattern), 2c (vector coding and index), 2d (cross-field mutual information). All the number tables. |
 | [METHODOLOGY.md](METHODOLOGY.md) | How every number was produced: data and its provenance, which sample each experiment used, hardware, timing and correctness protocols, and the known threats to validity. Read this before citing anything. |
 | [RENT_A_GPU.md](RENT_A_GPU.md) | How and where to rent a GPU by the hour for the missing measurements, with the prediction to check against. |
 | [OPERATOR_WINDOWS.md](OPERATOR_WINDOWS.md) | Copy-and-paste guide for someone lending a Windows machine with an NVIDIA GPU (Turing or newer). |
@@ -77,7 +77,7 @@ decompressor are worthless.
 | `kernel_opt.py` | Variants that stage input/output in shared memory. |
 | `kernel_idx8.py` | 8-bit index + warp prefix-sum. |
 | `bench_*.py` | Measurement harnesses. |
-| `analysis_*.py` | Joint entropy, mutual information, cost of each index scheme. |
+| `analysis_*.py` | Joint entropy, mutual information between neighbours and between fields, cost of each index scheme. |
 
 ## Requirements
 
