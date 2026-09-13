@@ -2,7 +2,7 @@
 
 **Arnau Ferrerons Manich**
 Independent researcher · ORCID 0009-0002-7245-7221
-Code, data and logs: https://github.com/ArnauFerma/bf16-exponent-compression
+Code, data and logs: https://github.com/ArnauFerma/bf16-exponent-compression · archived: https://doi.org/10.5281/zenodo.22736348
 
 ## Abstract
 

@@ -1,5 +1,7 @@
 # Lossless BF16 weight compression
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22736348.svg)](https://doi.org/10.5281/zenodo.22736348)
+
 Lossless compression of AI model weights by entropy-coding only the BF16
 **exponent** field. Same family as [DFloat11](https://github.com/LeanModels/DFloat11)
 (NeurIPS 2025). Sign and mantissa are stored raw because their entropy is
@@ -135,4 +137,5 @@ measurements have not yet been reproduced by anyone else;
 Code (`*.py`, `*.sh`, `*.ps1`) is released under the MIT License
 ([LICENSE](LICENSE)). Documentation, figures and measurement data are released
 under CC BY 4.0 ([LICENSE-docs](LICENSE-docs)). If you reuse the results,
-please cite as in [CITATION.cff](CITATION.cff).
+please cite as in [CITATION.cff](CITATION.cff); the archived record is
+[doi:10.5281/zenodo.22736348](https://doi.org/10.5281/zenodo.22736348).

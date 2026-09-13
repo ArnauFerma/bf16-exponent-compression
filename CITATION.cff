@@ -7,7 +7,10 @@ authors:
     given-names: "Arnau"
     orcid: "https://orcid.org/0009-0002-7245-7221"
 repository-code: "https://github.com/ArnauFerma/bf16-exponent-compression"
+doi: 10.5281/zenodo.22736348
+url: "https://doi.org/10.5281/zenodo.22736348"
 date-released: 2026-09-13
+version: v1.0.1
 abstract: >-
   Lossless compression of BF16 model weights by entropy-coding the exponent
   field, in the same family as DFloat11. Tests the hypothesis that a small
