@@ -40,10 +40,9 @@ average; both figures are given above and the difference is explained in
 | **[HANDOFF.md](HANDOFF.md)** | **Start here.** Current status, what is measured and what is not, and what to do next. |
 | [RESULTS.md](RESULTS.md) | Chronological log: Phase 1 (CPU), Phase 2 (kernels), 2b (access pattern), 2c (vector coding and index). All the number tables. |
 | [METHODOLOGY.md](METHODOLOGY.md) | How every number was produced: data and its provenance, which sample each experiment used, hardware, timing and correctness protocols, and the known threats to validity. Read this before citing anything. |
-| [ALQUILER_GPU.md](ALQUILER_GPU.md) | How and where to rent a GPU by the hour for the missing measurements. *(Spanish)* |
-| [INSTRUCCIONES_RTX4070_WIN.md](INSTRUCCIONES_RTX4070_WIN.md) | Guide for an operator with an RTX 4070 on Windows 11. *(Spanish)* |
-| [INSTRUCCIONES_LINUX.md](INSTRUCCIONES_LINUX.md) | Same for Linux. *(Spanish)* |
-| [INSTRUCCIONES_RTX3060.md](INSTRUCCIONES_RTX3060.md) | Same for an RTX 3060 on Windows. *(Spanish)* |
+| [RENT_A_GPU.md](RENT_A_GPU.md) | How and where to rent a GPU by the hour for the missing measurements, with the prediction to check against. |
+| [OPERATOR_WINDOWS.md](OPERATOR_WINDOWS.md) | Copy-and-paste guide for someone lending a Windows machine with an NVIDIA GPU (Turing or newer). |
+| [OPERATOR_LINUX.md](OPERATOR_LINUX.md) | Same for Linux. |
 
 ## Reproduce from scratch
 
@@ -64,7 +63,8 @@ powershell -ExecutionPolicy Bypass -File run_all.ps1
 fails the script exits with an error on purpose: timings from an incorrect
 decompressor are worthless.
 
-`run_all` runs the five measurement stages and packages the results.
+`run_all` records the environment, runs the five measurement stages into
+`results/<gpu-name>/` and packages them as `results.tar.gz` / `results.zip`.
 
 ## Code
 

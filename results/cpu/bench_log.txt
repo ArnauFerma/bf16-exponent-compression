@@ -1,88 +1,88 @@
 
 ======================================================================
-SINTETICO (gen_weights_bf16.py, seed 1234)
+SYNTHETIC (gen_weights_bf16.py, seed 1234)
 ======================================================================
-pesos: 2,162,688   simbolos distintos de exponente: 25
-entropia del exponente: 2.7182 bits
+weights: 2,162,688   distinct exponent symbols: 25
+exponent entropy: 2.7182 bits
 
-Huffman canonico (BLOCK=256):
-  avg bits/exponente : 2.7578
-  exponentes         :      745,542 B
-  signo+mantisa      :    2,162,688 B
-  indice bloques     :       33,792 B  (1.148%)
-  tabla longitudes   :          256 B
-  TOTAL              :    2,942,278 B   reduccion 31.98%
+Canonical Huffman (BLOCK=256):
+  avg bits/exponent  : 2.7578
+  exponents          :      745,542 B
+  sign+mantissa      :    2,162,688 B
+  block index        :       33,792 B  (1.148%)
+  length table       :          256 B
+  TOTAL              :    2,942,278 B   reduction 31.98%
 
-Escalera (1,1,1,2) (BLOCK=256):
-  avg bits/exponente : 2.8697   Kraft=0.9412
-  exponentes         :      775,781 B
-  cabecera (tabla)   :           10 B
-  TOTAL              :    2,972,271 B   reduccion 31.28%   (-0.69 pts vs Huffman)
+Ladder (1,1,1,2) (BLOCK=256):
+  avg bits/exponent  : 2.8697   Kraft=0.9412
+  exponents          :      775,781 B
+  header (table)     :           10 B
+  TOTAL              :    2,972,271 B   reduction 31.28%   (-0.69 pts vs Huffman)
 
-Escalera (1,1,2,2) (BLOCK=256):
-  avg bits/exponente : 2.9271   Kraft=0.9407
-  exponentes         :      791,295 B
-  cabecera (tabla)   :           12 B
-  TOTAL              :    2,987,787 B   reduccion 30.92%   (-1.05 pts vs Huffman)
+Ladder (1,1,2,2) (BLOCK=256):
+  avg bits/exponent  : 2.9271   Kraft=0.9407
+  exponents          :      791,295 B
+  header (table)     :           12 B
+  TOTAL              :    2,987,787 B   reduction 30.92%   (-1.05 pts vs Huffman)
 
-Escalera (1,2,2,3) (BLOCK=256):
-  avg bits/exponente : 3.0828   Kraft=0.9392
-  exponentes         :      833,391 B
-  cabecera (tabla)   :           18 B
-  TOTAL              :    3,029,889 B   reduccion 29.95%   (-2.03 pts vs Huffman)
+Ladder (1,2,2,3) (BLOCK=256):
+  avg bits/exponent  : 3.0828   Kraft=0.9392
+  exponents          :      833,391 B
+  header (table)     :           18 B
+  TOTAL              :    3,029,889 B   reduction 29.95%   (-2.03 pts vs Huffman)
 
-Barrido de BLOCK (escalera (1,1,1,2), indice uint32):
-  BLOCK=   64  bloques=   33,792  indice=   135,168 B (4.398%)  TOTAL=   3,073,647 B  reduccion=28.94%
-  BLOCK=  128  bloques=   16,896  indice=    67,584 B (2.248%)  TOTAL=   3,006,063 B  reduccion=30.50%
-  BLOCK=  256  bloques=    8,448  indice=    33,792 B (1.137%)  TOTAL=   2,972,271 B  reduccion=31.28%
-  BLOCK=  512  bloques=    4,224  indice=    16,896 B (0.572%)  TOTAL=   2,955,375 B  reduccion=31.67%
-  BLOCK= 1024  bloques=    2,112  indice=     8,448 B (0.287%)  TOTAL=   2,946,927 B  reduccion=31.87%
+BLOCK sweep (ladder (1,1,1,2), uint32 index):
+  BLOCK=   64  blocks=   33,792  index=   135,168 B (4.398%)  TOTAL=   3,073,647 B  reduction=28.94%
+  BLOCK=  128  blocks=   16,896  index=    67,584 B (2.248%)  TOTAL=   3,006,063 B  reduction=30.50%
+  BLOCK=  256  blocks=    8,448  index=    33,792 B (1.137%)  TOTAL=   2,972,271 B  reduction=31.28%
+  BLOCK=  512  blocks=    4,224  index=    16,896 B (0.572%)  TOTAL=   2,955,375 B  reduction=31.67%
+  BLOCK= 1024  blocks=    2,112  index=     8,448 B (0.287%)  TOTAL=   2,946,927 B  reduction=31.87%
 
---- roundtrip check (sintetico, muestra=2,000,000) ---
-  Huffman  roundtrip lossless: SI
-  Escalera roundtrip lossless: SI  (muestra toco el escape 15904 veces)
+--- roundtrip check (synthetic, sample=2,000,000) ---
+  Huffman  roundtrip lossless: YES
+  Ladder   roundtrip lossless: YES  (sample hit the escape 15904 times)
 
 ======================================================================
-REAL: Qwen/Qwen3-0.6B (model.safetensors, todos los tensores BF16)
+REAL: Qwen/Qwen3-0.6B (model.safetensors, all unique BF16 tensors)
 ======================================================================
-pesos: 596,049,920   simbolos distintos de exponente: 43
-entropia del exponente: 2.6450 bits
+weights: 596,049,920   distinct exponent symbols: 43
+exponent entropy: 2.6450 bits
 
-Huffman canonico (BLOCK=256):
-  avg bits/exponente : 2.6777
-  exponentes         :  199,505,152 B
-  signo+mantisa      :  596,049,920 B
-  indice bloques     :    9,313,280 B  (1.157%)
-  tabla longitudes   :          256 B
-  TOTAL              :  804,868,608 B   reduccion 32.48%
+Canonical Huffman (BLOCK=256):
+  avg bits/exponent  : 2.6777
+  exponents          :  199,505,152 B
+  sign+mantissa      :  596,049,920 B
+  block index        :    9,313,280 B  (1.157%)
+  length table       :          256 B
+  TOTAL              :  804,868,608 B   reduction 32.48%
 
-Escalera (1,1,1,2) (BLOCK=256):
-  avg bits/exponente : 2.8154   Kraft=0.9456
-  exponentes         :  209,768,273 B
-  cabecera (tabla)   :           10 B
-  TOTAL              :  815,131,483 B   reduccion 31.62%   (-0.86 pts vs Huffman)
+Ladder (1,1,1,2) (BLOCK=256):
+  avg bits/exponent  : 2.8154   Kraft=0.9456
+  exponents          :  209,768,273 B
+  header (table)     :           10 B
+  TOTAL              :  815,131,483 B   reduction 31.62%   (-0.86 pts vs Huffman)
 
-Escalera (1,1,2,2) (BLOCK=256):
-  avg bits/exponente : 2.8471   Kraft=0.9451
-  exponentes         :  212,126,062 B
-  cabecera (tabla)   :           12 B
-  TOTAL              :  817,489,274 B   reduccion 31.42%   (-1.06 pts vs Huffman)
+Ladder (1,1,2,2) (BLOCK=256):
+  avg bits/exponent  : 2.8471   Kraft=0.9451
+  exponents          :  212,126,062 B
+  header (table)     :           12 B
+  TOTAL              :  817,489,274 B   reduction 31.42%   (-1.06 pts vs Huffman)
 
-Escalera (1,2,2,3) (BLOCK=256):
-  avg bits/exponente : 3.0633   Kraft=0.9436
-  exponentes         :  228,237,593 B
-  cabecera (tabla)   :           18 B
-  TOTAL              :  833,600,811 B   reduccion 30.07%   (-2.41 pts vs Huffman)
+Ladder (1,2,2,3) (BLOCK=256):
+  avg bits/exponent  : 3.0633   Kraft=0.9436
+  exponents          :  228,237,593 B
+  header (table)     :           18 B
+  TOTAL              :  833,600,811 B   reduction 30.07%   (-2.41 pts vs Huffman)
 
-Barrido de BLOCK (escalera (1,1,1,2), indice uint32):
-  BLOCK=   64  bloques=9,313,280  indice=37,253,120 B (4.419%)  TOTAL= 843,071,323 B  reduccion=29.28%
-  BLOCK=  128  bloques=4,656,640  indice=18,626,560 B (2.259%)  TOTAL= 824,444,763 B  reduccion=30.84%
-  BLOCK=  256  bloques=2,328,320  indice= 9,313,280 B (1.143%)  TOTAL= 815,131,483 B  reduccion=31.62%
-  BLOCK=  512  bloques=1,164,160  indice= 4,656,640 B (0.575%)  TOTAL= 810,474,843 B  reduccion=32.01%
-  BLOCK= 1024  bloques=  582,080  indice= 2,328,320 B (0.288%)  TOTAL= 808,146,523 B  reduccion=32.21%
+BLOCK sweep (ladder (1,1,1,2), uint32 index):
+  BLOCK=   64  blocks=9,313,280  index=37,253,120 B (4.419%)  TOTAL= 843,071,323 B  reduction=29.28%
+  BLOCK=  128  blocks=4,656,640  index=18,626,560 B (2.259%)  TOTAL= 824,444,763 B  reduction=30.84%
+  BLOCK=  256  blocks=2,328,320  index= 9,313,280 B (1.143%)  TOTAL= 815,131,483 B  reduction=31.62%
+  BLOCK=  512  blocks=1,164,160  index= 4,656,640 B (0.575%)  TOTAL= 810,474,843 B  reduction=32.01%
+  BLOCK= 1024  blocks=  582,080  index= 2,328,320 B (0.288%)  TOTAL= 808,146,523 B  reduction=32.21%
 
---- roundtrip check (real Qwen3-0.6B, muestra=2,000,000) ---
-  Huffman  roundtrip lossless: SI
-  Escalera roundtrip lossless: SI  (muestra toco el escape 10165 veces)
+--- roundtrip check (real Qwen3-0.6B, sample=2,000,000) ---
+  Huffman  roundtrip lossless: YES
+  Ladder   roundtrip lossless: YES  (sample hit the escape 10165 times)
 
-Resultados guardados en outputs/bench_results.json
+Results saved to outputs/bench_results.json

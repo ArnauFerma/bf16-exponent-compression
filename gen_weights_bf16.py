@@ -2,8 +2,8 @@ import numpy as np, struct, math, json
 
 rng = np.random.default_rng(1234)
 
-# Simula varios "tensores" de un transformer: cada uno Gaussiano con su
-# propia escala, mas una pequena componente de cola pesada (outliers reales).
+# Simulates several transformer "tensors": each Gaussian with its own scale,
+# plus a small heavy-tailed component (real models have outliers).
 tensors = []
 specs = [
     ("layer0.attn.q_proj", 262144, 0.020),
@@ -16,14 +16,14 @@ specs = [
 ]
 for name, n, std in specs:
     core = rng.normal(0.0, std, n)
-    # ~0.3% de outliers (los modelos reales los tienen)
+    # ~0.3% outliers (real models have them)
     mask = rng.random(n) < 0.003
     core[mask] = rng.normal(0.0, std*8, mask.sum())
     tensors.append((name, core.astype(np.float32)))
 
 flat32 = np.concatenate([t[1] for t in tensors])
 
-# float32 -> bfloat16 con redondeo round-to-nearest-even
+# float32 -> bfloat16 with round-to-nearest-even
 u32 = flat32.view(np.uint32)
 rounding = ((u32 >> 16) & 1) + 0x7FFF
 bf16 = ((u32 + rounding) >> 16).astype(np.uint16)
@@ -32,7 +32,7 @@ import os
 os.makedirs("outputs", exist_ok=True)
 bf16.tofile("outputs/weights_bf16.bin")
 
-# --- Estadisticas de entropia por campo ---
+# --- Per-field entropy statistics ---
 sign = (bf16 >> 15) & 0x1
 expo = (bf16 >> 7) & 0xFF
 mant = bf16 & 0x7F
@@ -46,7 +46,7 @@ H_sign = entropy(sign, 1)
 H_exp  = entropy(expo, 8)
 H_mant = entropy(mant, 7)
 
-# Longitud media optima con Huffman canonico sobre el exponente
+# Optimal average length with canonical Huffman over the exponent
 counts = np.bincount(expo, minlength=256)
 symbols = [(int(c), i) for i, c in enumerate(counts) if c > 0]
 
@@ -74,7 +74,7 @@ total = int(counts.sum())
 avg_exp_bits = sum(lengths[s]*counts[s] for s in lengths) / total
 
 orig_bits_per_w = 16.0
-new_bits_per_w = 1 + 7 + avg_exp_bits   # signo + mantisa sin tocar + exponente comprimido
+new_bits_per_w = 1 + 7 + avg_exp_bits   # sign + untouched mantissa + compressed exponent
 
 stats = {
     "n_weights": int(bf16.size),
@@ -92,9 +92,9 @@ stats = {
 }
 print(json.dumps(stats, indent=2))
 
-# Top exponentes
+# Top exponents
 order = np.argsort(-counts)[:12]
-print("\nTop exponentes (valor, ocurrencias, %, long. Huffman):")
+print("\nTop exponents (value, occurrences, %, Huffman length):")
 for e in order:
     if counts[e] == 0: continue
     print(f"  {e:3d}  {counts[e]:8d}  {100*counts[e]/total:6.2f}%   {lengths[int(e)]} bits")

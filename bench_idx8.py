@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Indice uint32 vs indice de 8 bits + prefix-sum: correccion, velocidad y
-compresion. Ambos con la salida en shared (la variante ganadora)."""
+"""uint32 index vs 8-bit index + prefix-sum: correctness, speed and
+compression. Both with the output staged in shared (the winning variant)."""
 import sys
 import numpy as np, cupy as cp
 import bitpack as bp, gpu_kernels as gk, kernel_opt as ko, kernel_idx8 as k8
@@ -11,7 +11,7 @@ mm = np.memmap("outputs/real_weights_bf16.bin", dtype=np.uint16, mode="r")
 counts = np.load("outputs/real_exp_counts.npy")
 expo = ((np.asarray(mm[:N]) >> 7) & 0xFF).astype(np.uint8)
 d_out = cp.zeros(expo.size, dtype=cp.uint8)
-print(f"simbolos: {expo.size:,}\n")
+print(f"symbols: {expo.size:,}\n")
 
 co_h, lo_h, lengths, codes = bp.huffman_code_arrays(counts)
 th = gk.build_huffman_gpu_tables(lengths, codes)
@@ -31,8 +31,8 @@ for name, (co, lo) in (("huffman", (co_h, lo_h)), ("ladder", (co_l, lo_l))):
 def reduction(avg_bits, block, idx_b):
     return 100 * (1 - (1.0 + avg_bits/8 + idx_b/block)/2)
 
-hdr = (f"{'BLOCK':>6}{'thr':>5}{'codec':>9}{'indice':>10} | {'ms':>8}{'GB/s':>8} | "
-       f"{'B/bloque':>9}{'compresion':>11} | ok")
+hdr = (f"{'BLOCK':>6}{'thr':>5}{'codec':>9}{'index':>10} | {'ms':>8}{'GB/s':>8} | "
+       f"{'B/block':>9}{'compression':>11} | ok")
 print(hdr); print("-" * len(hdr))
 for block in (64, 128, 256):
     for threads in (128,):
@@ -45,7 +45,7 @@ for block in (64, 128, 256):
             smw = ko.max_words_per_cudablock(offs32, threads, tb)
             moved32 = tb/8 + expo.size + offs32.nbytes
 
-            # --- referencia: uint32 + salida en shared
+            # --- reference: uint32 + output in shared
             if name == "huffman":
                 f32 = lambda: ko.launch_h(d_words, d_offs, d_out, th, nb, block,
                                           expo.size, tb, threads, 0, 1, smw)
@@ -57,9 +57,9 @@ for block in (64, 128, 256):
             ms32, _, _ = measure(f32)
             print(f"{block:6d}{threads:5d}{name:>9}{'uint32':>10} | {ms32:7.2f} "
                   f"{moved32/(ms32*1e-3)/1e9:7.2f} | {4.0:9.3f}"
-                  f"{reduction(avg_bits, block, 4.0):10.2f}% | {'si' if ok32 else 'NO'}")
+                  f"{reduction(avg_bits, block, 4.0):10.2f}% | {'yes' if ok32 else 'NO'}")
 
-            # --- nuevo: 8 bits + prefix-sum
+            # --- new: 8 bits + prefix-sum
             try:
                 lc, sb, minlen, nb2, idx_b = k8.build_index8(starts, block, tb, threads)
             except ValueError as e:
@@ -84,7 +84,7 @@ for block in (64, 128, 256):
             moved8 = tb/8 + expo.size + lc.nbytes + sb.nbytes
             print(f"{block:6d}{threads:5d}{name:>9}{'uint8+ps':>10} | {ms8:7.2f} "
                   f"{moved8/(ms8*1e-3)/1e9:7.2f} | {idx_b:9.3f}"
-                  f"{reduction(avg_bits, block, idx_b):10.2f}% | {'si' if ok8 else 'NO'}"
-                  f"   ({ms32/ms8:.3f}x tiempo, "
+                  f"{reduction(avg_bits, block, idx_b):10.2f}% | {'yes' if ok8 else 'NO'}"
+                  f"   ({ms32/ms8:.3f}x time, "
                   f"{reduction(avg_bits,block,idx_b)-reduction(avg_bits,block,4.0):+.2f} pts)")
     print()

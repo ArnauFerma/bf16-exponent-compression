@@ -110,8 +110,8 @@ from the full histogram, never from the sample.
 | Dev machine (Linux) | Phase 1, all CPU analysis, all writing | none | 3.5 GiB RAM + 3.5 GiB swap. This is why extraction streams and why the CPU roundtrip is sampled. |
 | Measurement machine (Windows, WDDM driver model) | **All GPU numbers in this repository** | NVIDIA GeForce GTX 1050 Ti: Pascal, SM 6.1, 6 SMs, 4 GB GDDR5, 1 MiB L2, theoretical peak 112.1 GB/s (computed from `memoryClockRate` and `memoryBusWidth`) | Also drives the desktop. Clocks cannot be locked under WDDM. |
 
-**No other GPU has been measured yet.** The RTX 3060 / RTX 4070 / rented A100
-guides in this repository describe *planned* runs; HANDOFF section 4.1 states
+**No other GPU has been measured yet.** The operator and rent-a-GPU guides in
+this repository describe *planned* runs; HANDOFF section 4.1 states
 why they are blocking for any generalisation.
 
 ### Software versions
@@ -343,6 +343,11 @@ RESULTS.md can be checked against the log it was transcribed from:
   faster (4.85 vs 5.11), with the uint32 reference landing 6% above the
   same kernel's time in the head-to-head stage of the same run. The claim
   supported by both runs is "not slower", not a precise delta.
+
+  The logs predate the translation of the code's printed strings, so their
+  column headers are Spanish: *suelo* = floor, *simbolos* = symbols,
+  *variante* = variant, *indice* = index, *bloque* = block, *si* = yes,
+  *escalera* = ladder, *excede* = exceeds. The numbers are what they are.
 
   The text logs begin with PowerShell `NativeCommandError` noise: CuPy prints
   a `CUDA_PATH` warning to stderr and PowerShell reports it as an error. It is

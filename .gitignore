@@ -8,7 +8,7 @@ real_model/
 portable_bundle.zip
 ncu_out/
 portable_bundle.tar.gz
-resultados/
-resultados.tar.gz
+results.tar.gz
+results.zip
 # Nsight CSVs carry the process path (may include a user name); scrub before committing
 results/*/ncu_out/

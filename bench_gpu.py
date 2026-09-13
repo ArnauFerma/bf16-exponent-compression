@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
 """
-Fase 2: medida de los dos kernels de decodificacion.
+Phase 2: timing of the two decode kernels.
 
-Pregunta central: limitado por MEMORIA o por COMPUTO? Se mide un kernel
-"suelo de memoria" que mueve el mismo trafico sin decodificar. Cerca del
-suelo => manda la memoria y el codigo de entropia es irrelevante. Muy por
-encima => manda el computo y la escalera tiene donde ganar.
+Central question: MEMORY-bound or COMPUTE-bound? A "memory floor" kernel
+that moves the same traffic without decoding is measured alongside. Close to
+the floor => memory dominates and the entropy code is irrelevant. Far above
+it => compute dominates and the ladder has room to win.
 
-Metodologia (esta GPU no permite fijar relojes: es una consumer bajo WDDM
-y ademas mueve el escritorio, asi que el reloj oscila entre 607 y 1923 MHz):
-  - calentamiento sostenido por configuracion para subir el reloj a boost
-  - muestreo del reloj SM alrededor de cada medida
-  - orden de configuraciones aleatorizado, para descorrelacionar la deriva
-  - se reporta mediana e IQR, y ciclos-SM por simbolo (invariante al reloj)
+Method (this GPU cannot lock clocks: a consumer card under WDDM that also
+drives the desktop, so the clock swings between 607 and 1923 MHz):
+  - sustained warm-up per configuration to bring the clock to boost
+  - SM clock sampled around each measurement
+  - randomised configuration order, to decorrelate drift
+  - median and IQR reported, plus SM cycles per symbol (clock-invariant)
 """
 import json, random, subprocess, sys, time
 import numpy as np, cupy as cp
 import bitpack as bp, gpu_kernels as gk
 
-# isdigit(): bench_gpu se importa desde profile_run.py, que tiene sus
-# propios argumentos con guiones. Sin el guardia, el import revienta.
+# isdigit(): bench_gpu is imported from profile_run.py, which has its own
+# dashed arguments. Without the guard the import blows up.
 N        = int(sys.argv[1]) if (len(sys.argv) > 1 and sys.argv[1].isdigit()) else 64_000_000
 REPEATS  = 11
 WARMUP_S = 0.6
@@ -43,11 +43,11 @@ _floor_k = cp.RawKernel(_FLOOR_SRC, "mem_floor", backend="nvrtc")
 
 
 def to_u32_index(offs, total_bits):
-    """La spec del formato dice indice uint32. Con 751M pesos el stream son
-    ~2.0e9 bits, que cabe en uint32 (max 4.29e9); por encima habria que pasar
-    a offsets relativos por super-bloque."""
+    """The format spec says uint32 index. With ~600M weights the stream is
+    ~1.6e9 bits, which fits in uint32 (max 4.29e9); beyond that it would need
+    superblock-relative offsets."""
     if total_bits >= 2**32:
-        raise ValueError(f"stream de {total_bits} bits no cabe en indice uint32")
+        raise ValueError(f"stream of {total_bits} bits does not fit a uint32 index")
     return np.ascontiguousarray(offs).astype(np.uint32)
 
 
@@ -62,11 +62,11 @@ def sm_clock_mhz():
 
 
 def measure(fn):
-    """calentamiento sostenido + repeticiones; devuelve (mediana_ms, iqr_ms, mhz)"""
+    """sustained warm-up + repetitions; returns (median_ms, iqr_ms, mhz)"""
     t_end = time.time() + WARMUP_S
     while time.time() < t_end:
         fn()
-        cp.cuda.Stream.null.synchronize()   # si no, se encolan miles de lanzamientos
+        cp.cuda.Stream.null.synchronize()   # otherwise thousands of launches queue up
     mhz = [sm_clock_mhz()]
     ts = []
     for i in range(REPEATS):
@@ -82,13 +82,13 @@ def main():
     props = cp.cuda.runtime.getDeviceProperties(0)
     n_sm = props["multiProcessorCount"]
     peak_bw = 2 * props["memoryClockRate"] * 1e3 * (props["memoryBusWidth"] / 8) / 1e9
-    print(f"GPU: {props['name'].decode()}  SMs={n_sm}  pico={peak_bw:.1f} GB/s  "
-          f"(reloj no fijable: consumer/WDDM + escritorio activo)\n")
+    print(f"GPU: {props['name'].decode()}  SMs={n_sm}  peak={peak_bw:.1f} GB/s  "
+          f"(clock not lockable: consumer/WDDM + active desktop)\n")
 
     mm = np.memmap("outputs/real_weights_bf16.bin", dtype=np.uint16, mode="r")
     counts = np.load("outputs/real_exp_counts.npy")
     expo = ((np.asarray(mm[:N]) >> 7) & 0xFF).astype(np.uint8)
-    print(f"simbolos: {expo.size:,} (Qwen3-0.6B real)")
+    print(f"symbols: {expo.size:,} (real Qwen3-0.6B)")
 
     co_h, lo_h, lengths, codes = bp.huffman_code_arrays(counts)
     th = gk.build_huffman_gpu_tables(lengths, codes)
@@ -99,7 +99,7 @@ def main():
 
     for kn, kern in (("huffman", gk.huffman_kernel()), ("ladder", gk.ladder_kernel())):
         a = kern.attributes
-        print(f"  {kn:8} regs/hilo={a['num_regs']:3d}  shared={a['shared_size_bytes']:5d} B")
+        print(f"  {kn:8} regs/thread={a['num_regs']:3d}  shared={a['shared_size_bytes']:5d} B")
 
     streams = {}
     for cname, (code_of, len_of) in (("huffman", (co_h, lo_h)), ("ladder", (co_l, lo_l))):
@@ -108,12 +108,12 @@ def main():
         total_bits = int(starts[-1] + lens[-1])
         packed, _, _ = bp.encode_stream(expo, code_of, len_of, N)
         streams[cname] = (cp.asarray(bp.to_words(packed, total_bits)), starts, total_bits)
-        print(f"  {cname:8} {total_bits/8/2**20:7.2f} MiB  ({total_bits/expo.size:.4f} bits/simbolo)")
+        print(f"  {cname:8} {total_bits/8/2**20:7.2f} MiB  ({total_bits/expo.size:.4f} bits/symbol)")
     print()
 
     d_out = cp.zeros(expo.size, dtype=cp.uint8)
     configs = [(b, t) for b in (64, 128, 256, 512, 1024) for t in (64, 128, 256)]
-    random.Random(0).shuffle(configs)                 # descorrelacionar deriva
+    random.Random(0).shuffle(configs)                 # decorrelate drift
 
     out = {}
     for block, threads in configs:
@@ -143,8 +143,8 @@ def main():
                 ms=ms, iqr=iqr, mhz=mhz, gbs=moved / (ms * 1e-3) / 1e9,
                 cyc_per_sym=ms * 1e-3 * mhz * 1e6 * n_sm / expo.size)
 
-    hdr = (f"{'BLOCK':>6}{'thr':>5} | {'huff ms':>9}{'ladd ms':>9}{'suelo':>8} | "
-           f"{'ciclos/simbolo':>16} | {'h/suelo':>8}{'l/suelo':>8}{'l/h':>7}")
+    hdr = (f"{'BLOCK':>6}{'thr':>5} | {'huff ms':>9}{'ladd ms':>9}{'floor':>8} | "
+           f"{'cycles/symbol':>16} | {'h/floor':>8}{'l/floor':>8}{'l/h':>7}")
     print(hdr); print("-" * len(hdr))
     for block in (64, 128, 256, 512, 1024):
         for threads in (64, 128, 256):
@@ -156,7 +156,7 @@ def main():
 
     json.dump({f"{b}_{t}_{c}": v for (b, t, c), v in out.items()},
               open("outputs/gpu_bench.json", "w"), indent=2)
-    print("\nguardado en outputs/gpu_bench.json   (ms = mediana de 11, ± IQR)")
+    print("\nsaved to outputs/gpu_bench.json   (ms = median of 11, ± IQR)")
 
 
 if __name__ == "__main__":

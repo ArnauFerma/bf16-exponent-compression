@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Perfilado con Nsight Compute.  Uso:  bash profile_ncu.sh
+# Nsight Compute profiling.  Usage:  bash profile_ncu.sh
 set -uo pipefail
 cd "$(dirname "$0")"
 PY=./.venv/bin/python
 mkdir -p ncu_out
 
-# lts__t_sector_hit_rate es LA metrica decisiva: si el precipicio de BLOCK es
-# por L2, el acierto de L2 debe hundirse cuando el working set la desborda.
+# lts__t_sector_hit_rate is THE decisive metric: if the BLOCK cliff is an L2
+# effect, the L2 hit rate must collapse when the working set overflows it.
 METRICS="lts__t_sector_hit_rate.pct,\
 l1tex__t_sector_hit_rate.pct,\
 dram__bytes.sum.per_second,\
@@ -15,11 +15,11 @@ smsp__thread_inst_executed_per_inst_executed.ratio,\
 gpu__time_duration.sum"
 
 NCU=ncu
-# Los contadores requieren permisos: o el modulo con
-# NVreg_RestrictProfilingToAdminUsers=0, o sudo.
-if ! $NCU --version >/dev/null 2>&1; then echo "ncu no encontrado"; exit 1; fi
+# The counters need permissions: either the module with
+# NVreg_RestrictProfilingToAdminUsers=0, or sudo.
+if ! $NCU --version >/dev/null 2>&1; then echo "ncu not found"; exit 1; fi
 if ! $NCU --metrics gpu__time_duration.sum $PY -c "pass" >/dev/null 2>&1; then
-    echo "sin permisos de contadores -> usando sudo"
+    echo "no counter permissions -> using sudo"
     NCU="sudo $NCU"
 fi
 
@@ -34,4 +34,4 @@ for block in 64 128 256 512 1024; do
         > "ncu_out/b${block}_${codec}.csv" 2>&1
   done
 done
-echo "perfilado en ncu_out/"
+echo "profiles in ncu_out/"

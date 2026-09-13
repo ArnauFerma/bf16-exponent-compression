@@ -1,39 +1,40 @@
 #!/usr/bin/env python3
 """
-Codec "escalera" (ladder code) para el campo exponente de BF16.
+"Ladder" codec for the BF16 exponent field.
 
-Codigo de prefijo por "rungs" (escalones): el simbolo mas frecuente entra
-en el escalon mas corto. Cada escalon r tiene prefijo "r unos + un cero"
-seguido de rung_bits[r] bits de indice (2**rung_bits[r] simbolos caben en
-ese escalon). Lo que no cabe en ningun escalon usa un codigo de escape:
-n_rungs unos (sin cero final) + 8 bits crudos = el propio valor del
-exponente, sin necesidad de tabla para ese caso.
+Prefix code organised in rungs: the most frequent symbol goes in the shortest
+rung. Rung r has the prefix "r ones followed by a zero" and then rung_bits[r]
+index bits (2**rung_bits[r] symbols fit in that rung). Anything that fits in
+no rung uses an escape code: n_rungs ones (no trailing zero) followed by the
+8 raw bits of the exponent itself, so that case needs no table.
 
-Kraft se cumple exactamente por construccion, sea cual sea rung_bits:
-cada escalon r aporta 2**rung_bits[r] simbolos de longitud (r+1+rung_bits[r]),
-que suma 2**-(r+1) de masa; el escape se queda con el resto 2**-n_rungs.
+The code is complete by construction, whatever rung_bits is: rung r
+contributes 2**rung_bits[r] symbols of length (r+1+rung_bits[r]), i.e.
+2**-(r+1) of mass, and the escape keeps the remaining 2**-n_rungs. Note that
+kraft_sum() below sums only over the symbols actually present, so it comes
+out below 1 when not every escape codeword is used.
 """
 import numpy as np
 
-DEFAULT_RUNG_BITS = [1, 1, 1, 2]   # forma (1,1,1,2) del handoff
-RAW_BITS = 8                        # exponente BF16 = 8 bits
+DEFAULT_RUNG_BITS = [1, 1, 1, 2]   # the (1,1,1,2) shape from the handoff
+RAW_BITS = 8                        # BF16 exponent = 8 bits
 
 
 def build_ladder(counts, rung_bits=DEFAULT_RUNG_BITS, raw_bits=RAW_BITS):
-    """counts: array de 256 frecuencias (indice = valor de exponente).
+    """counts: array of 256 frequencies (index = exponent value).
 
-    Devuelve:
-      lengths: dict simbolo -> longitud en bits
-      slots:   list de listas, slots[r] = simbolos asignados al escalon r
-                (orden = indice dentro del escalon)
-      escape:  set de simbolos que van por el camino de escape
+    Returns:
+      lengths: dict symbol -> length in bits
+      slots:   list of lists, slots[r] = symbols assigned to rung r
+                (order = index within the rung)
+      escape:  set of symbols that go through the escape path
     """
     n_rungs = len(rung_bits)
     cap = [1 << b for b in rung_bits]
     total_slots = sum(cap)
 
     present = [(int(c), int(s)) for s, c in enumerate(counts) if c > 0]
-    present.sort(key=lambda x: (-x[0], x[1]))   # frecuencia desc, simbolo asc
+    present.sort(key=lambda x: (-x[0], x[1]))   # frequency desc, symbol asc
     ordered_syms = [s for _, s in present]
 
     ladder_syms = ordered_syms[:total_slots]
@@ -66,9 +67,9 @@ def kraft_sum(lengths):
 
 
 def header_bytes(slots, rung_bits):
-    """Cabecera minima: para cada escalon, la lista de simbolos que ocupa
-    (1 byte por simbolo, el orden ES el indice). No hace falta guardar
-    rung_bits si la forma es fija y conocida por ambos lados."""
+    """Minimal header: for each rung, the list of symbols it holds (1 byte
+    per symbol; the order IS the index). rung_bits need not be stored if the
+    shape is fixed and known to both sides."""
     return sum(len(s) for s in slots)
 
 
@@ -117,11 +118,11 @@ def make_code_tables(slots, rung_bits, escape_syms, raw_bits=RAW_BITS):
     n_rungs = len(rung_bits)
     encode_of = {}
     for r, chunk in enumerate(slots):
-        prefix = ((1 << r) - 1) << 1          # r unos seguidos de un 0
+        prefix = ((1 << r) - 1) << 1          # r ones followed by a 0
         plen = r + 1
         for idx, sym in enumerate(chunk):
             encode_of[sym] = (prefix, plen, idx, rung_bits[r])
-    escape_prefix = (1 << n_rungs) - 1        # n_rungs unos
+    escape_prefix = (1 << n_rungs) - 1        # n_rungs ones
     for sym in escape_syms:
         encode_of[sym] = (escape_prefix, n_rungs, sym, raw_bits)
     return encode_of
@@ -160,7 +161,7 @@ def decode_symbols(data, block_offsets, n, slots, rung_bits, raw_bits, block=256
 
 
 if __name__ == "__main__":
-    # auto-test rapido sobre datos aleatorios con distribucion sesgada
+    # quick self-test on random data with a skewed distribution
     rng = np.random.default_rng(0)
     probs = np.array([0.28, 0.22, 0.20, 0.11, 0.08, 0.06, 0.03, 0.01, 0.005, 0.005])
     probs = probs / probs.sum()

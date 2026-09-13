@@ -158,7 +158,7 @@ BLOCK cliff is **L2 per resident thread**:
 > **If the cliff is still there, the L2 explanation is false** and Phase 2b has
 > to be rewritten before any of this leaves the repo.
 
-How to do it: [ALQUILER_GPU.md](ALQUILER_GPU.md) (~1.40 USD, under an hour) or
+How to do it: [RENT_A_GPU.md](RENT_A_GPU.md) (~1.40 USD, under an hour) or
 the operator guides for a borrowed machine.
 
 ### 4.2 Cross-field mutual information — cheap, and it bounds a public claim

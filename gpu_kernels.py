@@ -1,27 +1,26 @@
 #!/usr/bin/env python3
 """
-Fase 2: dos kernels CUDA con interfaz IDENTICA para decodificar el campo
-exponente de BF16.
+Phase 2: two CUDA kernels with an IDENTICAL interface for decoding the BF16
+exponent field.
 
-  decode_huffman  -- Huffman canonico con LUT jerarquica en shared memory
-                     (LUT primaria de 2^LUT_BITS entradas = 4 KB, mas
-                     busqueda canonica para los codigos largos). Es el
-                     esquema de DFloat11.
-  decode_ladder   -- codigo por escalones: clz + switch + shift, tabla de
-                     10 bytes. La propuesta del handoff.
+  decode_huffman  -- canonical Huffman with a hierarchical LUT in shared
+                     memory (primary LUT of 2^LUT_BITS entries = 4 KB, plus
+                     canonical search for the long codes). DFloat11's scheme.
+  decode_ladder   -- ladder code: clz + switch + shift, 10-byte table. The
+                     handoff's proposal.
 
-Ambos comparten:
-  - el mismo indice grueso (un offset en bits por bloque de BLOCK simbolos)
-  - el mismo mapeo un-hilo-por-bloque
-  - el mismo lector de ventana de 32 bits (peek32)
-  - el mismo layout de salida (un byte de exponente por peso)
+Both share:
+  - the same coarse index (one bit offset per block of BLOCK symbols)
+  - the same one-thread-per-block mapping
+  - the same 32-bit window reader (peek32)
+  - the same output layout (one exponent byte per weight)
 
-Lo unico que cambia es el decodificador de simbolo. Esa es la comparacion.
+The only thing that changes is the symbol decoder. That is the comparison.
 """
 import numpy as np
 import cupy as cp
 
-LUT_BITS = 11          # LUT primaria: 2048 entradas x 2 B = 4 KB en SRAM
+LUT_BITS = 11          # primary LUT: 2048 entries x 2 B = 4 KB in SRAM
 
 _COMMON = r'''
 typedef unsigned int   u32;
@@ -29,8 +28,8 @@ typedef unsigned char  u8;
 typedef unsigned short u16;
 typedef long long      i64;
 
-// Ventana de 32 bits alineada a MSB empezando en el bit p del stream.
-// words[] esta en big-endian: el bit p vive en words[p>>5], bit 31-(p&31).
+// MSB-aligned 32-bit window starting at bit p of the stream.
+// words[] is big-endian: bit p lives in words[p>>5], bit 31-(p&31).
 __device__ __forceinline__ u32 peek32(const u32* __restrict__ w, i64 p)
 {
     i64 wi = p >> 5;
@@ -43,9 +42,9 @@ __device__ __forceinline__ u32 peek32(const u32* __restrict__ w, i64 p)
 '''
 
 _LADDER_SRC = _COMMON + r'''
-// Escalera (1,1,1,2): prefijo = n unos + un cero, luego rung_bits[n] bits
-// de indice. n>=4 es el escape: 1111 + 8 bits crudos.
-// slots_flat: 10 bytes, los simbolos de cada escalon en orden de indice.
+// Ladder (1,1,1,2): prefix = n ones + a zero, then rung_bits[n] index bits.
+// n>=4 is the escape: 1111 + 8 raw bits.
+// slots_flat: 10 bytes, the symbols of each rung in index order.
 extern "C" __global__ void decode_ladder(
     const u32* __restrict__ words,
     const u32* __restrict__ block_bitpos,
@@ -57,8 +56,8 @@ extern "C" __global__ void decode_ladder(
 
     __shared__ u8 s_slots[16];
     if (threadIdx.x < 16) s_slots[threadIdx.x] = slots_flat[threadIdx.x];
-    __syncthreads();          // TODOS los hilos deben llegar a la barrera:
-    if (b >= n_blocks) return;   // el return va despues, nunca antes.
+    __syncthreads();          // ALL threads must reach the barrier:
+    if (b >= n_blocks) return;   // the return goes after it, never before.
 
     i64 p     = (i64)block_bitpos[b];
     i64 start = (i64)b * block_size;
@@ -66,7 +65,7 @@ extern "C" __global__ void decode_ladder(
 
     for (i64 i = start; i < end; ++i) {
         u32 w = peek32(words, p);
-        int n = __clz(~w);                 // numero de unos iniciales
+        int n = __clz(~w);                 // number of leading ones
         u8 sym; int len;
         if      (n == 0) { sym = s_slots[0 + ((w >> 30) & 1u)]; len = 2;  }
         else if (n == 1) { sym = s_slots[2 + ((w >> 29) & 1u)]; len = 3;  }
@@ -83,9 +82,9 @@ _HUFF_SRC = _COMMON + r'''
 #define LUT_BITS %d
 #define LUT_SIZE (1 << LUT_BITS)
 
-// Huffman canonico. LUT primaria indexada por los LUT_BITS siguientes bits:
-// entrada = (longitud << 8) | simbolo, longitud 0 => codigo largo.
-// Camino largo: busqueda canonica con first_code/first_index/cnt por longitud.
+// Canonical Huffman. Primary LUT indexed by the next LUT_BITS bits:
+// entry = (length << 8) | symbol, length 0 => long code.
+// Long path: canonical search with first_code/first_index/cnt per length.
 extern "C" __global__ void decode_huffman(
     const u32* __restrict__ words,
     const u32* __restrict__ block_bitpos,
@@ -116,7 +115,7 @@ extern "C" __global__ void decode_huffman(
         u8 sym;
         if (len) {
             sym = (u8)(e & 0xFF);
-        } else {                            // codigo largo: busqueda canonica
+        } else {                            // long code: canonical search
             sym = 0;
             for (int L = LUT_BITS + 1; L <= maxlen; ++L) {
                 u32 code = w >> (32 - L);
@@ -135,7 +134,7 @@ extern "C" __global__ void decode_huffman(
 ''' % LUT_BITS
 
 
-# ------------------------------------------------------------------ modulos
+# ------------------------------------------------------------------ modules
 _ladder_k = None
 _huff_k = None
 
@@ -152,10 +151,10 @@ def huffman_kernel():
     return _huff_k
 
 
-# ------------------------------------------------------- tablas para el host
+# ---------------------------------------------------------- host-side tables
 def build_huffman_gpu_tables(lengths, codes, lut_bits=LUT_BITS):
     maxlen = max(lengths.values())
-    order = sorted(lengths, key=lambda s: (lengths[s], s))   # orden canonico
+    order = sorted(lengths, key=lambda s: (lengths[s], s))   # canonical order
     sorted_syms = np.array(order, dtype=np.uint8)
 
     cnt = np.zeros(33, dtype=np.int32)
@@ -182,7 +181,7 @@ def build_huffman_gpu_tables(lengths, codes, lut_bits=LUT_BITS):
 
 
 def ladder_slots_flat(slots):
-    """10 bytes: los simbolos de cada escalon, en orden de indice."""
+    """10 bytes: the symbols of each rung, in index order."""
     flat = np.zeros(16, dtype=np.uint8)
     i = 0
     for chunk in slots:
@@ -192,7 +191,7 @@ def ladder_slots_flat(slots):
     return flat
 
 
-# ------------------------------------------------------------- lanzadores
+# ------------------------------------------------------------- launchers
 def run_ladder(d_words, d_offs, d_out, d_slots, n_blocks, block, n_syms, threads=128):
     grid = (n_blocks + threads - 1) // threads
     ladder_kernel()((grid,), (threads,),

@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
 """
-Extrae los pesos BF16 crudos de un .safetensors a un .bin plano de uint16,
-acumulando de paso los conteos exactos por exponente.
+Extracts the raw BF16 weights of a .safetensors into a flat uint16 .bin,
+accumulating the exact per-exponent counts along the way.
 
-No necesita torch: el formato safetensors es
-    [8 bytes: len(header) uint64 LE][header JSON][buffer de datos]
-y el header da dtype, shape y (start, end) de cada tensor dentro del buffer.
-Como solo interesan los patrones de bits, se leen como uint16 sin convertir
-(numpy no tiene dtype bfloat16).
+No torch needed: the safetensors format is
+    [8 bytes: len(header) uint64 LE][JSON header][data buffer]
+and the header gives dtype, shape and (start, end) of each tensor in the
+buffer. Only the bit patterns matter, so they are read as uint16 without
+conversion (numpy has no bfloat16 dtype).
 
-Streaming tensor a tensor: nunca carga el fichero entero en RAM.
+Streams tensor by tensor: never loads the whole file into RAM.
 
-Los tensores cuyo contenido es byte a byte identico a uno ya escrito se
-omiten (p.ej. lm_head.weight cuando es una copia de embed_tokens.weight con
-tie_word_embeddings). Un peso que existe una vez en el modelo se cuenta una
-vez.
+Tensors whose content is byte-for-byte identical to one already written are
+skipped (e.g. lm_head.weight when it is a copy of embed_tokens.weight under
+tie_word_embeddings). A weight that exists once in the model is counted once.
 """
 import json, sys, os, hashlib
 import numpy as np
@@ -32,25 +31,25 @@ with open(SRC, "rb") as f:
 
     tensors = {k: v for k, v in header.items() if k != "__metadata__"}
     dtypes = sorted({v["dtype"] for v in tensors.values()})
-    print(f"tensores: {len(tensors)}   dtypes presentes: {dtypes}")
+    print(f"tensors: {len(tensors)}   dtypes present: {dtypes}")
 
     bf16 = {k: v for k, v in tensors.items() if v["dtype"] == "BF16"}
     skipped = {k: v["dtype"] for k, v in tensors.items() if v["dtype"] != "BF16"}
     if skipped:
-        print(f"omitidos (no BF16): {len(skipped)}  -> {sorted(set(skipped.values()))}")
+        print(f"skipped (not BF16): {len(skipped)}  -> {sorted(set(skipped.values()))}")
 
-    # orden por offset = lectura secuencial en disco
+    # order by offset = sequential read from disk
     order = sorted(bf16.items(), key=lambda kv: kv[1]["data_offsets"][0])
 
     counts = np.zeros(256, dtype=np.int64)
     total = 0
-    seen = {}            # sha256 del contenido -> nombre del primer tensor
+    seen = {}            # sha256 of content -> name of the first tensor
     duplicates = []
     with open(DST, "wb") as out:
         for name, meta in order:
             s, e = meta["data_offsets"]
             nbytes = e - s
-            assert nbytes % 2 == 0, f"{name}: {nbytes} bytes no es par"
+            assert nbytes % 2 == 0, f"{name}: {nbytes} bytes is odd"
             f.seek(data_start + s)
             raw = f.read(nbytes)
             digest = hashlib.sha256(raw).hexdigest()
@@ -64,16 +63,16 @@ with open(SRC, "rb") as f:
             total += arr.size
 
 if duplicates:
-    print(f"\ntensores omitidos por ser copia exacta de otro ({len(duplicates)}):")
+    print(f"\ntensors skipped as exact copies of another ({len(duplicates)}):")
     for name, orig, n in duplicates:
-        print(f"  {name}  ==  {orig}   ({n:,} pesos)")
+        print(f"  {name}  ==  {orig}   ({n:,} weights)")
 
-print(f"\npesos BF16 extraidos : {total:,}   ({total*2:,} bytes)")
-assert int(counts.sum()) == total, "conteos no cuadran con el total"
+print(f"\nBF16 weights extracted: {total:,}   ({total*2:,} bytes)")
+assert int(counts.sum()) == total, "counts do not add up to the total"
 np.save(CNT, counts)
 
 p = counts[counts > 0].astype(np.float64) / total
 H = float(-(p * np.log2(p)).sum())
-print(f"exponentes distintos : {int((counts>0).sum())}")
-print(f"entropia exponente   : {H:.4f} bits")
-print(f"\nescrito: {DST}  y  {CNT}")
+print(f"distinct exponents    : {int((counts>0).sum())}")
+print(f"exponent entropy      : {H:.4f} bits")
+print(f"\nwritten: {DST}  and  {CNT}")

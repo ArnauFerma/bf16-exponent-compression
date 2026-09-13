@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Huffman vs escalera CON la optimizacion del patron de acceso.
+"""Huffman vs ladder WITH the access-pattern optimisation.
 
-El resultado de la Fase 2 (la escalera no aporta nada) se midio con el kernel
-lento. Al mover el cuello de botella, el ranking puede cambiar: hay que
-rehacer la comparacion, no extrapolarla.
+The Phase 2 result (the ladder brings nothing) was measured with the slow
+kernel. Moving the bottleneck can change the ranking: the comparison has to
+be redone, not extrapolated.
 """
 import sys
 import numpy as np, cupy as cp
@@ -15,7 +15,7 @@ mm = np.memmap("outputs/real_weights_bf16.bin", dtype=np.uint16, mode="r")
 counts = np.load("outputs/real_exp_counts.npy")
 expo = ((np.asarray(mm[:N]) >> 7) & 0xFF).astype(np.uint8)
 d_out = cp.zeros(expo.size, dtype=cp.uint8)
-print(f"simbolos: {expo.size:,}\n")
+print(f"symbols: {expo.size:,}\n")
 
 co_h, lo_h, lengths, codes = bp.huffman_code_arrays(counts)
 th = gk.build_huffman_gpu_tables(lengths, codes)
@@ -32,7 +32,7 @@ for name, (co, lo) in (("huffman", (co_h, lo_h)), ("ladder", (co_l, lo_l))):
     packed, _, _ = bp.encode_stream(expo, co, lo, N)
     streams[name] = (cp.asarray(bp.to_words(packed, tb)), starts, tb)
 
-hdr = f"{'BLOCK':>6}{'thr':>5} {'variante':>12} | {'huff ms':>9}{'ladd ms':>9} | {'huff GB/s':>10}{'ladd GB/s':>10} | {'l/h':>7}  ok"
+hdr = f"{'BLOCK':>6}{'thr':>5} {'variant':>12} | {'huff ms':>9}{'ladd ms':>9} | {'huff GB/s':>10}{'ladd GB/s':>10} | {'l/h':>7}  ok"
 print(hdr); print("-" * len(hdr))
 for block in (64, 128, 256, 512, 1024):
     for threads in (32, 64, 128):
@@ -61,5 +61,5 @@ for block in (64, 128, 256, 512, 1024):
             h, l = row["huffman"], row["ladder"]
             print(f"{block:6d}{threads:5d} {f'in={si} out={so}':>12} | "
                   f"{h[0]:8.2f} {l[0]:8.2f} | {h[1]:10.2f}{l[1]:10.2f} | "
-                  f"{l[0]/h[0]:7.3f}  {'si' if okall else 'NO'}")
+                  f"{l[0]/h[0]:7.3f}  {'yes' if okall else 'NO'}")
     print()

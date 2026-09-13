@@ -1,5 +1,5 @@
-# Perfilado con Nsight Compute. Requiere ncu en el PATH y permisos de
-# contadores (ver PORTABLE.md).
+# Nsight Compute profiling. Needs ncu on the PATH and counter permissions
+# (see OPERATOR_WINDOWS.md).
 # Uso:  powershell -ExecutionPolicy Bypass -File profile_ncu.ps1
 $ErrorActionPreference = "Continue"
 Set-Location $PSScriptRoot
@@ -10,17 +10,17 @@ if (-not $ncu) {
     $cand = Get-ChildItem "C:\Program Files\NVIDIA Corporation\Nsight Compute*" -Filter ncu.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($cand) { $ncu = $cand.FullName }
 }
-if (-not $ncu) { Write-Host "ncu.exe no encontrado. Ver PORTABLE.md" -ForegroundColor Red; exit 1 }
+if (-not $ncu) { Write-Host "ncu.exe not found. See OPERATOR_WINDOWS.md" -ForegroundColor Red; exit 1 }
 Write-Host "ncu: $ncu" -ForegroundColor Cyan
 
-# lts__t_sector_hit_rate es LA metrica decisiva: si el precipicio de BLOCK es
-# por L2, el acierto de L2 debe hundirse entre BLOCK=128 y BLOCK=256.
+# lts__t_sector_hit_rate is THE decisive metric: if the BLOCK cliff is an L2
+# effect, the L2 hit rate must collapse between BLOCK=128 and BLOCK=256.
 $metrics = @(
-    "lts__t_sector_hit_rate.pct",                                   # acierto L2
-    "l1tex__t_sector_hit_rate.pct",                                 # acierto L1
-    "dram__bytes.sum.per_second",                                   # ancho de banda real
-    "sm__warps_active.avg.pct_of_peak_sustained_active",            # ocupacion lograda
-    "smsp__thread_inst_executed_per_inst_executed.ratio",           # divergencia
+    "lts__t_sector_hit_rate.pct",                                   # L2 hit rate
+    "l1tex__t_sector_hit_rate.pct",                                 # L1 hit rate
+    "dram__bytes.sum.per_second",                                   # achieved bandwidth
+    "sm__warps_active.avg.pct_of_peak_sustained_active",            # achieved occupancy
+    "smsp__thread_inst_executed_per_inst_executed.ratio",           # divergence
     "gpu__time_duration.sum"
 ) -join ","
 
@@ -38,4 +38,4 @@ foreach ($block in 64,128,256,512,1024) {
         if (Test-Path $out) { Write-Host "  -> $out" }
     }
 }
-Write-Host "`nHecho. Comprime la carpeta ncu_out\ y resultados_bench.txt y llevatelos." -ForegroundColor Green
+Write-Host "`nDone. run_all.ps1 copies ncu_out\ into results\<gpu>\." -ForegroundColor Green

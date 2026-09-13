@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
 """
-Indice de bloques de 8 bits + prefix-sum de warp.
+8-bit block index + warp prefix-sum.
 
-En vez de un offset absoluto uint32 por bloque (4 B), se guarda:
-  - un uint32 por SUPERBLOQUE de 32 bloques (= un warp)  -> 0,125 B/bloque
-  - un uint8 por bloque con su LONGITUD en bits, menos un minimo global
-                                                          -> 1,0   B/bloque
-Total 1,125 B/bloque frente a 4. El offset de cada bloque se recupera con un
-prefix-sum exclusivo dentro del warp (5 pasos de __shfl_up_sync).
+Instead of one absolute uint32 offset per block (4 B), store:
+  - one uint32 per SUPERBLOCK of 32 blocks (= one warp)   -> 0.125 B/block
+  - one uint8 per block with its LENGTH in bits, minus a global minimum
+                                                          -> 1.0   B/block
+Total 1.125 B/block instead of 4. Each block's offset is recovered with an
+exclusive prefix-sum within the warp (5 steps of __shfl_up_sync).
 
-Cabe en 8 bits porque la longitud de bloque tiene poco rango: con BLOCK=64
-medido sobre Qwen3-0.6B va de 130 a 273 bits (rango 143 < 256). El build
-verifica esa condicion y falla si no se cumple.
+It fits in 8 bits because block length has little spread: at BLOCK=64,
+measured on Qwen3-0.6B, it runs from 130 to 273 bits (range 143 < 256). The
+builder checks that condition and fails if it does not hold.
 
-Se combina con la puesta de la SALIDA en shared, que fue la variante ganadora.
+Combined with staging the OUTPUT in shared, which was the winning variant.
 """
 import numpy as np, cupy as cp
 import gpu_kernels as gk
 
 _PRE = gk._COMMON + r'''
-// offset del bloque = base del superbloque + suma exclusiva de las
-// longitudes de los lanes anteriores del warp
+// block offset = superblock base + exclusive sum of the lengths of the
+// preceding lanes in the warp
 __device__ __forceinline__ i64 block_offset(
     const u32* __restrict__ sb_base, const u8* __restrict__ len_codes,
     int b, int lane, int minlen, int n_blocks)
@@ -145,9 +145,9 @@ def huffman_idx8():
 def build_index8(starts, block, total_bits, threads):
     """-> len_codes uint8[n_blocks], sb_base uint32[...], minlen, n_blocks
 
-    sb_base se rellena hasta cubrir toda la rejilla: los hilos sobrantes del
-    ultimo bloque CUDA participan en el prefix-sum (necesitan el warp entero)
-    y leen sb_base[b>>5] antes de descartarse."""
+    sb_base is padded to cover the whole grid: the spare threads of the last
+    CUDA block take part in the prefix-sum (it needs the full warp) and read
+    sb_base[b>>5] before being discarded."""
     offs = np.ascontiguousarray(starts[::block]).astype(np.int64)
     n_blocks = offs.size
     ends = np.empty_like(offs)
@@ -156,8 +156,8 @@ def build_index8(starts, block, total_bits, threads):
     blens = ends - offs
     minlen, maxlen = int(blens.min()), int(blens.max())
     if maxlen - minlen > 255:
-        raise ValueError(f"rango de longitud de bloque {maxlen-minlen} > 255; "
-                         f"con BLOCK={block} no cabe en 8 bits")
+        raise ValueError(f"block length range {maxlen-minlen} > 255; "
+                         f"does not fit in 8 bits at BLOCK={block}")
     len_codes = (blens - minlen).astype(np.uint8)
 
     grid = (n_blocks + threads - 1) // threads
@@ -166,7 +166,7 @@ def build_index8(starts, block, total_bits, threads):
     real = offs[::32]
     sb[:real.size] = real.astype(np.uint32)
     sb[real.size:] = real[-1] if real.size else 0
-    # len_codes tambien se rellena para no leer fuera
+    # len_codes is padded too, so nothing reads out of bounds
     lc = np.zeros(grid * threads, dtype=np.uint8)
     lc[:n_blocks] = len_codes
     return lc, sb, minlen, n_blocks, 1.0 + 4.0 / 32

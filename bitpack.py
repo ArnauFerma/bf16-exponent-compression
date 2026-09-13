@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Encoder vectorizado de bitstream (numpy) para Huffman canonico y escalera.
+Vectorised bitstream encoder (numpy) for canonical Huffman and the ladder.
 
-El BitWriter de df11_reference/ladder_codec es un bucle Python por simbolo:
-correcto pero inviable a la escala que necesitan los kernels (decenas de
-millones de simbolos). Aqui se produce EXACTAMENTE el mismo bitstream
-(MSB-first dentro de cada byte, igual que np.packbits con bitorder='big')
-en unas pocas pasadas vectorizadas: una por longitud de codigo presente.
+The BitWriter in df11_reference/ladder_codec is a per-symbol Python loop:
+correct, but unusable at the scale the kernels need (tens of millions of
+symbols). This produces EXACTLY the same bitstream (MSB-first within each
+byte, like np.packbits with bitorder='big') in a few vectorised passes: one
+per code length present.
 
-Devuelve tambien los offsets en bits de cada bloque, que son el indice
-grueso que hace paralelizable la decodificacion.
+Also returns the bit offset of each block, which is the coarse index that
+makes decoding parallelisable.
 """
 import numpy as np
 
@@ -17,7 +17,7 @@ from df11_reference import canonical_huffman
 import ladder_codec as lc
 
 
-# ------------------------------------------------------------------ tablas
+# ------------------------------------------------------------------ tables
 def huffman_code_arrays(counts):
     """-> code_of[256] uint32, len_of[256] uint8, (lengths, codes) dicts"""
     lengths, codes = canonical_huffman(counts)
@@ -44,10 +44,10 @@ def ladder_code_arrays(counts, rung_bits=(1, 1, 1, 2)):
 
 # --------------------------------------------------------------- bitstream
 def encode_stream(syms, code_of, len_of, block):
-    """syms: array de simbolos (enteros 0..255).
+    """syms: array of symbols (integers 0..255).
 
-    Devuelve (packed_bytes, block_bitpos int64[n_blocks], total_bits).
-    packed_bytes es identico byte a byte a lo que produce BitWriter.
+    Returns (packed_bytes, block_bitpos int64[n_blocks], total_bits).
+    packed_bytes is byte-for-byte identical to what BitWriter produces.
     """
     syms = np.asarray(syms)
     lens = len_of[syms].astype(np.int64)
@@ -74,8 +74,8 @@ def encode_stream(syms, code_of, len_of, block):
 
 
 def to_words(packed, total_bits):
-    """bytes -> uint32 big-endian (bit p vive en word p>>5, bit 31-(p&31)),
-    con 2 words de guarda para que peek32 pueda leer siempre w[i+1]."""
+    """bytes -> big-endian uint32 (bit p lives in word p>>5, bit 31-(p&31)),
+    with 2 guard words so peek32 can always read w[i+1]."""
     n_words = (total_bits + 31) // 32 + 2
     buf = np.zeros(n_words * 4, dtype=np.uint8)
     buf[:packed.size] = packed
@@ -90,7 +90,7 @@ if __name__ == "__main__":
     syms = rng.choice(len(probs), size=100_000, p=probs).astype(np.int64)
     counts = np.bincount(syms, minlength=256)
 
-    # Huffman: comparar contra el BitWriter original, byte a byte
+    # Huffman: compare against the original BitWriter, byte for byte
     code_of, len_of, lengths, codes = huffman_code_arrays(counts)
     packed, offs, nbits = encode_stream(syms, code_of, len_of, 256)
 
@@ -101,13 +101,13 @@ if __name__ == "__main__":
             ref_offs.append(w.bitpos())
         w.write(codes[int(e)], lengths[int(e)])
     ref = w.flush()
-    print("huffman  bytes identicos :", packed.tobytes() == ref)
-    print("huffman  offsets iguales :", np.array_equal(offs, np.array(ref_offs)))
+    print("huffman  bytes identical :", packed.tobytes() == ref)
+    print("huffman  offsets equal   :", np.array_equal(offs, np.array(ref_offs)))
 
-    # Escalera: comparar contra encode_symbols original
+    # Ladder: compare against the original encode_symbols
     code_of2, len_of2, slots, escape = ladder_code_arrays(counts)
     packed2, offs2, nbits2 = encode_stream(syms, code_of2, len_of2, 256)
     encode_of = lc.make_code_tables(slots, [1, 1, 1, 2], escape)
     ref2, ref_offs2 = lc.encode_symbols(syms, encode_of, block=256)
-    print("escalera bytes identicos :", packed2.tobytes() == ref2)
-    print("escalera offsets iguales :", np.array_equal(offs2, ref_offs2.astype(np.int64)))
+    print("ladder   bytes identical :", packed2.tobytes() == ref2)
+    print("ladder   offsets equal   :", np.array_equal(offs2, ref_offs2.astype(np.int64)))

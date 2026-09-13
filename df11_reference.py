@@ -1,28 +1,28 @@
 #!/usr/bin/env python3
 """
-Banco de pruebas: compresion lossless de pesos BF16 estilo DFloat11.
+Test bench: DFloat11-style lossless compression of BF16 weights.
 
-- Huffman CANONICO sobre el campo exponente (prefijo-libre garantizado).
-- Signo + mantisa se dejan crudos (su entropia ya es ~maxima).
-- Indice GRUESO: un offset por bloque de N simbolos, no por peso.
-  -> paralelizable a nivel de bloque, overhead ~0.05%.
+- CANONICAL Huffman over the exponent field (prefix-free by construction).
+- Sign + mantissa left raw (their entropy is already ~maximal).
+- COARSE index: one offset per block of N symbols, not per weight.
+  -> parallelisable at block level, ~0.05% overhead.
 
-Uso:
+Usage:
     python3 df11_reference.py weights_bf16.bin
 """
 import sys, heapq, struct
 import numpy as np
 
-BLOCK = 256          # simbolos por bloque (unidad de paralelismo)
+BLOCK = 256          # symbols per block (unit of parallelism)
 
 # ---------------------------------------------------------------- Huffman
 def canonical_huffman(counts):
-    """Devuelve (lengths, codes) con codigo canonico prefijo-libre."""
+    """Returns (lengths, codes) for a canonical prefix-free code."""
     syms = [(int(c), i) for i, c in enumerate(counts) if c > 0]
-    if len(syms) == 1:                       # caso degenerado
+    if len(syms) == 1:                       # degenerate case
         return {syms[0][1]: 1}, {syms[0][1]: 0}
 
-    heap = [(c, 1, [s]) for c, s in syms]    # (peso, profundidad_max, simbolos)
+    heap = [(c, 1, [s]) for c, s in syms]    # (weight, max_depth, symbols)
     heapq.heapify(heap)
     depth = {s: 0 for _, s in syms}
     while len(heap) > 1:
@@ -34,7 +34,7 @@ def canonical_huffman(counts):
 
     lengths = {s: depth[s] for _, s in syms}
 
-    # asignacion canonica: ordenar por (longitud, simbolo) y contar
+    # canonical assignment: sort by (length, symbol) and count up
     order = sorted(lengths, key=lambda s: (lengths[s], s))
     codes, code, prev_len = {}, 0, lengths[order[0]]
     for s in order:
@@ -93,26 +93,26 @@ def encode(bf16):
         "encoded": encoded,
         "block_offsets": np.array(block_offsets, dtype=np.uint64),
         "lengths": lengths,
-        "sign_mant": sign_mant.astype(np.uint8),   # 8 bits: signo + 7 mantisa
+        "sign_mant": sign_mant.astype(np.uint8),   # 8 bits: sign + 7 mantissa
         "n": len(expo),
     }
 
 def decode(blob):
     lengths = blob["lengths"]
     _, codes = None, None
-    # reconstruir codigo canonico solo desde las longitudes (asi se transmite)
+    # rebuild the canonical code from the lengths alone (that is what is transmitted)
     order = sorted(lengths, key=lambda s: (lengths[s], s))
     codes, code, prev = {}, 0, lengths[order[0]]
     for s in order:
         code <<= (lengths[s] - prev); codes[s] = code; code += 1; prev = lengths[s]
-    # tabla inversa (longitud, codigo) -> simbolo
+    # inverse table (length, code) -> symbol
     table = {(lengths[s], codes[s]): s for s in codes}
     maxlen = max(lengths.values())
 
     out = np.empty(blob["n"], dtype=np.int64)
     n_blocks = len(blob["block_offsets"])
 
-    # >>> Este bucle sobre bloques es lo que en GPU va en paralelo. <<<
+    # >>> This loop over blocks is what runs in parallel on the GPU. <<<
     for b in range(n_blocks):
         r = BitReader(blob["encoded"], int(blob["block_offsets"][b]))
         start = b * BLOCK
@@ -123,7 +123,7 @@ def decode(blob):
                 code = (code << 1) | r.read_bit(); ln += 1
                 if (ln, code) in table:
                     out[i] = table[(ln, code)]; break
-                if ln > maxlen: raise ValueError("codigo invalido")
+                if ln > maxlen: raise ValueError("invalid code")
     sm = blob["sign_mant"].astype(np.uint16)
     return (((sm >> 7) & 1) << 15) | (out.astype(np.uint16) << 7) | (sm & 0x7F)
 
@@ -131,27 +131,27 @@ def decode(blob):
 if __name__ == "__main__":
     path = sys.argv[1] if len(sys.argv) > 1 else "weights_bf16.bin"
     bf16 = np.fromfile(path, dtype=np.uint16)
-    print(f"Fichero: {path}")
-    print(f"Pesos:   {bf16.size:,}   ({bf16.nbytes:,} bytes)\n")
+    print(f"File:    {path}")
+    print(f"Weights: {bf16.size:,}   ({bf16.nbytes:,} bytes)\n")
 
     blob = encode(bf16)
     exp_bytes  = len(blob["encoded"])
     sm_bytes   = blob["sign_mant"].nbytes
     idx_bytes  = blob["block_offsets"].nbytes
-    tab_bytes  = 256                       # 1 byte de longitud por simbolo
+    tab_bytes  = 256                       # 1 length byte per symbol
     total      = exp_bytes + sm_bytes + idx_bytes + tab_bytes
 
-    print(f"  exponentes Huffman : {exp_bytes:>10,} bytes")
-    print(f"  signo+mantisa      : {sm_bytes:>10,} bytes")
-    print(f"  indice de bloques  : {idx_bytes:>10,} bytes  ({100*idx_bytes/total:.3f}%)")
-    print(f"  tabla (longitudes) : {tab_bytes:>10,} bytes")
+    print(f"  Huffman exponents  : {exp_bytes:>10,} bytes")
+    print(f"  sign+mantissa      : {sm_bytes:>10,} bytes")
+    print(f"  block index        : {idx_bytes:>10,} bytes  ({100*idx_bytes/total:.3f}%)")
+    print(f"  table (lengths)    : {tab_bytes:>10,} bytes")
     print(f"  ---------------------------------------")
     print(f"  TOTAL              : {total:>10,} bytes")
     print(f"  ratio              : {total/bf16.nbytes:.4f}")
-    print(f"  reduccion          : {100*(1-total/bf16.nbytes):.2f}%")
-    print(f"  bits por peso      : {8*total/bf16.size:.3f}\n")
+    print(f"  reduction          : {100*(1-total/bf16.nbytes):.2f}%")
+    print(f"  bits per weight    : {8*total/bf16.size:.3f}\n")
 
     rec = decode(blob)
     ok = np.array_equal(rec, bf16)
-    print(f"  roundtrip lossless : {'SI (bit a bit)' if ok else 'NO'}")
-    print(f"  bloques paralelos  : {len(blob['block_offsets']):,} (de {BLOCK} simbolos)")
+    print(f"  roundtrip lossless : {'YES (bit-exact)' if ok else 'NO'}")
+    print(f"  parallel blocks    : {len(blob['block_offsets']):,} (of {BLOCK} symbols)")
