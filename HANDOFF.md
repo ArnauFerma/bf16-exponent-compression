@@ -209,7 +209,8 @@ Today the kernel emits one exponent byte per weight and a separate pass is
 needed to merge sign+mantissa: 64 MB + 64 MB read and 128 MB written =
 **256 MB, almost 3x the decode kernel itself (88.7 MB)**. Fusing it drops total
 pipeline traffic from ~345 MB to ~217 MB (−37%) and removes an entire launch.
-Needed for Phase 3 regardless.
+Needed for Phase 3 regardless. DFloat11's kernel already does this (section
+6); it is not a novelty, just work not yet done here.
 
 ### 4.4 16-bit index for BLOCK >= 256 — dropped
 
@@ -268,9 +269,34 @@ frontier**, which changes the premise of section 4.6.
 
 NeurIPS 2025, arXiv 2504.11651, github.com/LeanModels/DFloat11. Does the same
 thing as here: Huffman over BF16 exponents, sign and mantissa untouched, ~30%
-bit-exact reduction. Hierarchical LUTs in SRAM, a two-phase kernel, and a
-*gaps* array holding each thread's bit offset — equivalent to the block index
-here, and with exactly the structure the 8-bit index improves on.
+bit-exact reduction.
+
+**Correction (2026-09-13, from reading `dfloat11/decode.cu`, not the paper's
+prose).** An earlier version of this section said their *gaps* array was
+"equivalent to the block index here, with exactly the structure the 8-bit
+index improves on". That was an inference and it is wrong. Their kernel sits
+at the *other* corner of the trilemma in section 1:
+
+- each thread owns a **fixed 8 bytes of compressed stream**; `gaps` is a
+  **5-bit** value per thread — the bits to skip to the first whole codeword.
+  That is already a compact index: 5 bits per 64 compressed bits, about
+  **0.21 bits/weight** on this data (vs 0.14 for the 8-bit scheme at BLOCK=64,
+  0.07 at BLOCK=128, 0.50 for uint32);
+- since symbols per thread then vary, the kernel decodes **twice**: a
+  counting pass, a block-wide prefix-sum in shared memory for each thread's
+  output position (one `uint32` per thread block anchors it), then the real
+  pass;
+- output is staged in shared memory and written coalesced, **already merged
+  with sign+mantissa into BF16**. Sections 2b and 4.3 here rediscover things
+  DFloat11 shipped;
+- the multi-level byte LUTs live in global memory and are read through
+  `__ldg`, not in shared memory.
+
+So the 8-bit index is **not a drop-in** for DFloat11. The honest comparison
+is between two index designs: theirs at ~0.21 bits/weight with a two-pass
+decode and no input index, ours at 0.07–0.14 bits/weight with a single pass
+and a warp prefix-sum on the input side. Which decodes faster has not been
+measured (section 1, "Not measured").
 
 Cost they report: **~40% to 2x slower than BF16 at batch 1**, parity (1.02x) at
 batch 128, because decompression is constant per forward pass.

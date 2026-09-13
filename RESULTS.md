@@ -489,6 +489,7 @@ remaining headroom is structural.
   written = 256 MB, almost 3x the kernel itself). Fusing it drops total
   pipeline traffic from ~345 MB to ~217 MB (-37%) and removes an entire launch.
   Needed for Phase 3 regardless.
+  DFloat11's published kernel already does this (see HANDOFF section 6).
 - **Huffman over pairs**: half the iterations in the serial chain.
 
 ## New files
