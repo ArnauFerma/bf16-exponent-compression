@@ -96,7 +96,7 @@ decompressor are worthless.
 
 ## Authorship and tools
 
-**Author: Arnau Ferrerons Manich.** The hypothesis, the direction of the
+**Author: Arnau Ferrerons Manich** ([ORCID 0009-0002-7245-7221](https://orcid.org/0009-0002-7245-7221)). The hypothesis, the direction of the
 work, and the decisions about what to measure and what to conclude are the
 author's. The GPU measurements were run on the author's own hardware and,
 for the rented cards, on the author's account by Claude Code under the

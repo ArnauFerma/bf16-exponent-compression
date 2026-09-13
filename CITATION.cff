@@ -5,6 +5,7 @@ type: software
 authors:
   - family-names: "Ferrerons Manich"
     given-names: "Arnau"
+    orcid: "https://orcid.org/0009-0002-7245-7221"
 repository-code: "https://github.com/ArnauFerma/bf16-exponent-compression"
 date-released: 2026-09-13
 abstract: >-
