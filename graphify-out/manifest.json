@@ -1,0 +1,380 @@
+{
+  "analysis_fields.py": {
+    "mtime": 1789297964.6763158,
+    "seen": 1790073300.5784383,
+    "ast_hash": "e9d3f190bd2327a72c4d56d27f2cd8c6",
+    "semantic_hash": "e9d3f190bd2327a72c4d56d27f2cd8c6"
+  },
+  "analysis_index.py": {
+    "mtime": 1789297013.3770225,
+    "seen": 1790073300.5784507,
+    "ast_hash": "d7e5e195001e19cb905ecacc5100c0ac",
+    "semantic_hash": "d7e5e195001e19cb905ecacc5100c0ac"
+  },
+  "analysis_vector.py": {
+    "mtime": 1789296945.933011,
+    "seen": 1790073300.5784569,
+    "ast_hash": "c0a19b454804fe031cd7a44857c9f7a9",
+    "semantic_hash": "c0a19b454804fe031cd7a44857c9f7a9"
+  },
+  "bench.py": {
+    "mtime": 1789296945.933011,
+    "seen": 1790073300.5784612,
+    "ast_hash": "7030ae3cadac7ec7d2d6b201f0906eaa",
+    "semantic_hash": "7030ae3cadac7ec7d2d6b201f0906eaa"
+  },
+  "bench_gpu.py": {
+    "mtime": 1789309096.790932,
+    "seen": 1790073300.5784647,
+    "ast_hash": "9785b5e75e884f2314755f9d373cb4b7",
+    "semantic_hash": "9785b5e75e884f2314755f9d373cb4b7"
+  },
+  "bench_head2head.py": {
+    "mtime": 1789297013.3770225,
+    "seen": 1790073300.578468,
+    "ast_hash": "387b2dde7aa4ea372b04807a535b1329",
+    "semantic_hash": "387b2dde7aa4ea372b04807a535b1329"
+  },
+  "bench_idx8.py": {
+    "mtime": 1789296945.9320111,
+    "seen": 1790073300.5784717,
+    "ast_hash": "1b0eba052a93bc331b26f4406a9583da",
+    "semantic_hash": "1b0eba052a93bc331b26f4406a9583da"
+  },
+  "bench_opt.py": {
+    "mtime": 1789297013.3770225,
+    "seen": 1790073300.5784748,
+    "ast_hash": "9fb84539319f082c897eb5cf68406bc5",
+    "semantic_hash": "9fb84539319f082c897eb5cf68406bc5"
+  },
+  "bitpack.py": {
+    "mtime": 1789296823.1509967,
+    "seen": 1790073300.5784779,
+    "ast_hash": "1e3bbeec1be2adde8d124c0900124cc3",
+    "semantic_hash": "1e3bbeec1be2adde8d124c0900124cc3"
+  },
+  "df11_reference.py": {
+    "mtime": 1789296801.813995,
+    "seen": 1790073300.5784814,
+    "ast_hash": "41ce402021ce6efd490a497e408a4d78",
+    "semantic_hash": "41ce402021ce6efd490a497e408a4d78"
+  },
+  "env_info.py": {
+    "mtime": 1789294179.9680047,
+    "seen": 1790073300.5784843,
+    "ast_hash": "01211e0dca7a8c1f9b6d143de50c9c3f",
+    "semantic_hash": "01211e0dca7a8c1f9b6d143de50c9c3f"
+  },
+  "extract_real_weights.py": {
+    "mtime": 1789296884.9910028,
+    "seen": 1790073300.578488,
+    "ast_hash": "1d374331552729cbb8aff498fc7b9589",
+    "semantic_hash": "1d374331552729cbb8aff498fc7b9589"
+  },
+  "gen_weights_bf16.py": {
+    "mtime": 1789296823.1499965,
+    "seen": 1790073300.578491,
+    "ast_hash": "9ba9969e4e296924050269e449f5fba4",
+    "semantic_hash": "9ba9969e4e296924050269e449f5fba4"
+  },
+  "gpu_kernels.py": {
+    "mtime": 1789296884.9900029,
+    "seen": 1790073300.5784938,
+    "ast_hash": "287fabb7fdd377d24b2a2a32c30a1dca",
+    "semantic_hash": "287fabb7fdd377d24b2a2a32c30a1dca"
+  },
+  "kernel_idx8.py": {
+    "mtime": 1789296975.760016,
+    "seen": 1790073300.578497,
+    "ast_hash": "c9c429a74a33ddf5f25d66603e8e0446",
+    "semantic_hash": "c9c429a74a33ddf5f25d66603e8e0446"
+  },
+  "kernel_opt.py": {
+    "mtime": 1789296975.759016,
+    "seen": 1790073300.5785,
+    "ast_hash": "5f299cd1bd850426c8fc863f0e06aa96",
+    "semantic_hash": "5f299cd1bd850426c8fc863f0e06aa96"
+  },
+  "ladder_codec.py": {
+    "mtime": 1789296776.7559934,
+    "seen": 1790073300.578503,
+    "ast_hash": "87babb5a15ddb7b9aa6d4bcbb1ca4d15",
+    "semantic_hash": "87babb5a15ddb7b9aa6d4bcbb1ca4d15"
+  },
+  "profile_ncu.ps1": {
+    "mtime": 1789297201.9430642,
+    "seen": 1790073300.578506,
+    "ast_hash": "6c843b676c18b57339d4baf440cd04db",
+    "semantic_hash": "6c843b676c18b57339d4baf440cd04db"
+  },
+  "profile_ncu.sh": {
+    "mtime": 1789297082.7220364,
+    "seen": 1790073300.5785096,
+    "ast_hash": "8e99dddd751a6810ee289fe26f26f4be",
+    "semantic_hash": "8e99dddd751a6810ee289fe26f26f4be"
+  },
+  "profile_run.py": {
+    "mtime": 1789297013.3780224,
+    "seen": 1790073300.5785127,
+    "ast_hash": "8d05946868831ffad2d148e0595f4207",
+    "semantic_hash": "8d05946868831ffad2d148e0595f4207"
+  },
+  "results/a100sxm480gb/env_info.json": {
+    "mtime": 1789308820.9473734,
+    "seen": 1790073300.5785158,
+    "ast_hash": "06a064e4778a2de9ab62f2b743f91f42",
+    "semantic_hash": "06a064e4778a2de9ab62f2b743f91f42"
+  },
+  "results/a100sxm480gb/gpu_bench.json": {
+    "mtime": 1789308824.8363807,
+    "seen": 1790073300.5785186,
+    "ast_hash": "d2035a94390c7c51195045b636490585",
+    "semantic_hash": "d2035a94390c7c51195045b636490585"
+  },
+  "results/cpu/bench_results.json": {
+    "mtime": 1789294211.5480742,
+    "seen": 1790073300.5785227,
+    "ast_hash": "df198dfc01ac2f3770dc55fbac5943bc",
+    "semantic_hash": "df198dfc01ac2f3770dc55fbac5943bc"
+  },
+  "results/cpu/bench_results.pre-dedup.json": {
+    "mtime": 1789296358.3790548,
+    "seen": 1790073300.5785255,
+    "ast_hash": "877cc50d0ecbea89e9f1c828c9cf6c97",
+    "semantic_hash": "877cc50d0ecbea89e9f1c828c9cf6c97"
+  },
+  "results/cpu/env_info.json": {
+    "mtime": 1789294211.850075,
+    "seen": 1790073300.5785282,
+    "ast_hash": "8d92c1742247dcbff24c80159975dab4",
+    "semantic_hash": "8d92c1742247dcbff24c80159975dab4"
+  },
+  "results/gtx1050ti/env_info.json": {
+    "mtime": 1789296358.3790548,
+    "seen": 1790073300.5785313,
+    "ast_hash": "39273704ed87a2eb28f5f38107ddf9e1",
+    "semantic_hash": "39273704ed87a2eb28f5f38107ddf9e1"
+  },
+  "results/gtx1050ti/gpu_bench.json": {
+    "mtime": 1789296358.3800547,
+    "seen": 1790073300.5785344,
+    "ast_hash": "b4821d858b3d2cdb92ce236374dc555e",
+    "semantic_hash": "b4821d858b3d2cdb92ce236374dc555e"
+  },
+  "results/rtx4090/env_info.json": {
+    "mtime": 1789308923.220574,
+    "seen": 1790073300.5785377,
+    "ast_hash": "9caf4d63d63c4ed518d8d136997ca483",
+    "semantic_hash": "9caf4d63d63c4ed518d8d136997ca483"
+  },
+  "results/rtx4090/gpu_bench.json": {
+    "mtime": 1789308925.778579,
+    "seen": 1790073300.5785499,
+    "ast_hash": "3641125ecc7eb4440c3538e867ef0383",
+    "semantic_hash": "3641125ecc7eb4440c3538e867ef0383"
+  },
+  "run_all.ps1": {
+    "mtime": 1789297082.7230363,
+    "seen": 1790073300.5785527,
+    "ast_hash": "e37951c93a8a5d2fc2eaa1b002abbc8c",
+    "semantic_hash": "e37951c93a8a5d2fc2eaa1b002abbc8c"
+  },
+  "run_all.sh": {
+    "mtime": 1789297082.7210364,
+    "seen": 1790073300.578556,
+    "ast_hash": "cadc2fed77c57321840fe01d084ccabd",
+    "semantic_hash": "cadc2fed77c57321840fe01d084ccabd"
+  },
+  "setup_cloud.sh": {
+    "mtime": 1789297082.7210364,
+    "seen": 1790073300.5785594,
+    "ast_hash": "d0279762b11a3923e2cda4d2e22c3d4b",
+    "semantic_hash": "d0279762b11a3923e2cda4d2e22c3d4b"
+  },
+  "setup_linux.sh": {
+    "mtime": 1789297082.7200363,
+    "seen": 1790073300.5785625,
+    "ast_hash": "340bb941c741e9154b037f9cc98d9ac5",
+    "semantic_hash": "340bb941c741e9154b037f9cc98d9ac5"
+  },
+  "setup_windows.ps1": {
+    "mtime": 1789297082.7220364,
+    "seen": 1790073300.5785654,
+    "ast_hash": "a487f3e32efbfa854e2159211c37c98c",
+    "semantic_hash": "a487f3e32efbfa854e2159211c37c98c"
+  },
+  "verify_kernels.py": {
+    "mtime": 1789296884.9910028,
+    "seen": 1790073300.5785687,
+    "ast_hash": "effbf25a442e5f0e4b9e921cc93e4dcd",
+    "semantic_hash": "effbf25a442e5f0e4b9e921cc93e4dcd"
+  },
+  "HANDOFF.md": {
+    "mtime": 1789329610.532089,
+    "seen": 1790073300.5785718,
+    "ast_hash": "da3ae9e56e35228be4075d2a9954bab1",
+    "semantic_hash": "da3ae9e56e35228be4075d2a9954bab1"
+  },
+  "METHODOLOGY.md": {
+    "mtime": 1789309096.789932,
+    "seen": 1790073300.578575,
+    "ast_hash": "604fc697feae9a775e6288ff5d8f9ef9",
+    "semantic_hash": "604fc697feae9a775e6288ff5d8f9ef9"
+  },
+  "OPERATOR_LINUX.md": {
+    "mtime": 1789297623.2911925,
+    "seen": 1790073300.578578,
+    "ast_hash": "f87e3ebaeb3793b51f92bb5014a90996",
+    "semantic_hash": "f87e3ebaeb3793b51f92bb5014a90996"
+  },
+  "OPERATOR_WINDOWS.md": {
+    "mtime": 1789297138.1090488,
+    "seen": 1790073300.5785806,
+    "ast_hash": "eb6727c8a4698ddd1ac769eb032a8067",
+    "semantic_hash": "eb6727c8a4698ddd1ac769eb032a8067"
+  },
+  "README.md": {
+    "mtime": 1789323390.0456367,
+    "seen": 1790073300.5785835,
+    "ast_hash": "7e30cabca98d9f47b7273f24e3287972",
+    "semantic_hash": "7e30cabca98d9f47b7273f24e3287972"
+  },
+  "RENT_A_GPU.md": {
+    "mtime": 1789309096.790932,
+    "seen": 1790073300.5785863,
+    "ast_hash": "ddf5d9514a7331f34e99b90fcb8cbf0f",
+    "semantic_hash": "ddf5d9514a7331f34e99b90fcb8cbf0f"
+  },
+  "RESULTS.md": {
+    "mtime": 1789329650.5572188,
+    "seen": 1790073300.5785897,
+    "ast_hash": "136de0d49ed858daf3c13864a7e4097b",
+    "semantic_hash": "136de0d49ed858daf3c13864a7e4097b"
+  },
+  "paper/report.md": {
+    "mtime": 1789329627.393144,
+    "seen": 1790073300.5785925,
+    "ast_hash": "1ca24ac221b78860f202c02bbba9b204",
+    "semantic_hash": "1ca24ac221b78860f202c02bbba9b204"
+  },
+  "results/a100sxm480gb/1_bench_base.txt": {
+    "mtime": 1789308822.2313757,
+    "seen": 1790073300.5785992,
+    "ast_hash": "7ed8845d27b3800e318ff5620f2b9d5b",
+    "semantic_hash": "7ed8845d27b3800e318ff5620f2b9d5b"
+  },
+  "results/a100sxm480gb/2_bench_opt.txt": {
+    "mtime": 1789308822.891377,
+    "seen": 1790073300.5786026,
+    "ast_hash": "df888a31489a0279fa5f1de580452d17",
+    "semantic_hash": "df888a31489a0279fa5f1de580452d17"
+  },
+  "results/a100sxm480gb/3_head2head.txt": {
+    "mtime": 1789308823.5333784,
+    "seen": 1790073300.578606,
+    "ast_hash": "454d5f6573a1c6d7f8036dd755b5d3f9",
+    "semantic_hash": "454d5f6573a1c6d7f8036dd755b5d3f9"
+  },
+  "results/a100sxm480gb/4_bench_idx8.txt": {
+    "mtime": 1789308824.1763794,
+    "seen": 1790073300.578609,
+    "ast_hash": "788e66c85f7ca03900966059bb9bf92d",
+    "semantic_hash": "788e66c85f7ca03900966059bb9bf92d"
+  },
+  "results/a100sxm480gb/gpu_info.txt": {
+    "mtime": 1789308821.5893745,
+    "seen": 1790073300.5786119,
+    "ast_hash": "90a2dfa128b860ff09d7135775da1db0",
+    "semantic_hash": "90a2dfa128b860ff09d7135775da1db0"
+  },
+  "results/cpu/analysis_fields.txt": {
+    "mtime": 1789297970.2273178,
+    "seen": 1790073300.578637,
+    "ast_hash": "b50f6703bce6bd601591b033f3ce16cf",
+    "semantic_hash": "b50f6703bce6bd601591b033f3ce16cf"
+  },
+  "results/cpu/bench_log.pre-dedup.txt": {
+    "mtime": 1789296433.1360288,
+    "seen": 1790073300.5786402,
+    "ast_hash": "4d647844e4067453c895687739da7db1",
+    "semantic_hash": "4d647844e4067453c895687739da7db1"
+  },
+  "results/cpu/bench_log.txt": {
+    "mtime": 1789297311.494094,
+    "seen": 1790073300.578643,
+    "ast_hash": "ae74077b6ad1d7223c538081dfd2323b",
+    "semantic_hash": "ae74077b6ad1d7223c538081dfd2323b"
+  },
+  "results/cpu/extract_log.txt": {
+    "mtime": 1789297337.8011014,
+    "seen": 1790073300.5786462,
+    "ast_hash": "21fec7614ab7afe2af9a305b7b95eeb8",
+    "semantic_hash": "21fec7614ab7afe2af9a305b7b95eeb8"
+  },
+  "results/gtx1050ti/1_bench_base.txt": {
+    "mtime": 1789296358.3780546,
+    "seen": 1790073300.5786493,
+    "ast_hash": "7a5762deecad17a5de6621ddd327ec1d",
+    "semantic_hash": "7a5762deecad17a5de6621ddd327ec1d"
+  },
+  "results/gtx1050ti/3_head2head.txt": {
+    "mtime": 1789296358.3790548,
+    "seen": 1790073300.5786524,
+    "ast_hash": "375b09320349fbcb6944960cc72e2411",
+    "semantic_hash": "375b09320349fbcb6944960cc72e2411"
+  },
+  "results/gtx1050ti/gpu_info.txt": {
+    "mtime": 1789296358.3800547,
+    "seen": 1790073300.5786555,
+    "ast_hash": "1891825ec3b7283f0c8831ded2423478",
+    "semantic_hash": "1891825ec3b7283f0c8831ded2423478"
+  },
+  "results/rtx4090/3_head2head.txt": {
+    "mtime": 1789308924.9235773,
+    "seen": 1790073300.5786586,
+    "ast_hash": "42f4babf4d2a64da6e6845fe8daf72b1",
+    "semantic_hash": "42f4babf4d2a64da6e6845fe8daf72b1"
+  },
+  "results/rtx4090/gpu_info.txt": {
+    "mtime": 1789308923.6425748,
+    "seen": 1790073300.5786617,
+    "ast_hash": "42ba66286792649d04098d3565e8bdac",
+    "semantic_hash": "42ba66286792649d04098d3565e8bdac"
+  },
+  "results/gtx1050ti/2_bench_opt.txt": {
+    "mtime": 1789296358.3780546,
+    "seen": 1790445672.1191065,
+    "ast_hash": "912e2ee07452241d5d8498527f9bb239",
+    "semantic_hash": "912e2ee07452241d5d8498527f9bb239"
+  },
+  "results/gtx1050ti/4_bench_idx8.txt": {
+    "mtime": 1789296358.3790548,
+    "seen": 1790445672.1191125,
+    "ast_hash": "ced83d6a9d1045aa604ba42f793adc9e",
+    "semantic_hash": "ced83d6a9d1045aa604ba42f793adc9e"
+  },
+  "results/rtx4090/1_bench_base.txt": {
+    "mtime": 1789308924.0645757,
+    "seen": 1790445672.1191165,
+    "ast_hash": "72858020f367682d110f6eccf194b008",
+    "semantic_hash": "72858020f367682d110f6eccf194b008"
+  },
+  "results/rtx4090/2_bench_opt.txt": {
+    "mtime": 1789308924.4985764,
+    "seen": 1790445672.1191201,
+    "ast_hash": "f2ffc3669662402ecb2a59492f76f2db",
+    "semantic_hash": "f2ffc3669662402ecb2a59492f76f2db"
+  },
+  "results/rtx4090/4_bench_idx8.txt": {
+    "mtime": 1789308925.3455782,
+    "seen": 1790445672.119124,
+    "ast_hash": "2d08204c04580c8bcea332f08071ff76",
+    "semantic_hash": "2d08204c04580c8bcea332f08071ff76"
+  },
+  "paper/report.pdf": {
+    "mtime": 1789329629.626151,
+    "seen": 1790445672.1191273,
+    "ast_hash": "6a50dc73aeb17cdf4adcf5f2730f8811",
+    "semantic_hash": "6a50dc73aeb17cdf4adcf5f2730f8811"
+  }
+}
