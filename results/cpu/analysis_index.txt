@@ -1,0 +1,31 @@
+=== (a) mutual information in windows spread across the model ===
+        offset     H(X)   H(Y|X)    I(X;Y)
+             0   2.5494   2.5491   0.00024
+    74,506,240   2.5560   2.5558   0.00020
+   149,012,480   2.6966   2.6798   0.01681
+   298,024,960   2.6648   2.6538   0.01107
+   447,037,440   2.6708   2.6587   0.01210
+   556,049,920   2.6436   2.6347   0.00884
+
+max I(X;Y) observed: 0.01681 bits/symbol; scalar Huffman redundancy over the whole model: 0.03267 bits/symbol.
+I(X;Y) bounds what order-1 context coding can remove from the entropy; here it is 51% of the redundancy.
+
+=== (b) cost of the block index ===
+Huffman over the whole model: 2.6777 bits/exponent
+
+BLOCK=  64: block length in bits  min=130 max=273 mean=165.4 range=143
+BLOCK= 256: block length in bits  min=558 max=967 mean=661.5 range=409
+
+                              index scheme   B/block   BLOCK=64  BLOCK=256
+            absolute uint32 (current spec)     4.000     30.14%     32.48%
+  relative uint16 + uint32/superblock(256)     2.016     31.69%     32.87%
+           uint8 lengths + warp prefix-sum     1.000     32.48%     33.07%
+
+Reading: the measured fast point (BLOCK=64, output in shared, 4.80 ms) today
+loses 2.34 points of compression against BLOCK=256 ONLY because of the index.
+With a hierarchical 16-bit index that loss almost disappears, without touching
+the decode kernel or the entropy code.
+
+real	0m31,614s
+user	0m6,931s
+sys	0m7,951s

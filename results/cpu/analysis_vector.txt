@@ -1,0 +1,30 @@
+symbols analysed        : 64,000,000
+H(X)  marginal          : 2.5520 bits
+H(X,Y) joint (overlap.) : 5.1038 bits  -> 2.5519 per symbol
+H(Y|X) conditional      : 2.5518 bits
+I(X;Y) mutual info      : 0.0002 bits   <-- the NEW headroom
+
+scalar Huffman          : 2.5832 bits/symbol   (redundancy 0.0312)
+Huffman over pairs      : 2.5668 bits/symbol   (421 distinct pairs, maxlen=26)
+  gain vs scalar        : +0.0164 bits/symbol (+0.63%)
+
+Ladder over pairs (rungs have to be widened):
+      (1, 1, 1, 2)  5.1172 bits/symbol  table=    20 B  (+2.5504 vs Huffman-pairs)
+      (2, 2, 3, 4)  3.1712 bits/symbol  table=    64 B  (+0.6044 vs Huffman-pairs)
+      (4, 4, 5, 6)  2.7542 bits/symbol  table=   256 B  (+0.1874 vs Huffman-pairs)
+      (5, 5, 6, 7)  3.0699 bits/symbol  table=   512 B  (+0.5031 vs Huffman-pairs)
+      (6, 6, 7, 8)  3.5106 bits/symbol  table=   842 B  (+0.9438 vs Huffman-pairs)
+
+Decode table in SRAM:
+  scalar Huffman  : LUT 2^11 x 2 B            = 4,096 B
+  Huffman pairs   : LUT 2^11 x 4 B (16b syms) = 8,192 B  (plus fallback)
+  scalar ladder   : 10 symbols x 1 B          = 10 B
+
+CONTEXT modelling (order 1): one code table per previous symbol
+  contexts with data    : 31
+  Huffman with context  : 2.5831 bits/symbol (+0.0000 vs scalar)
+  SRAM table cost       : Huffman      124 KiB   ladder    310 B
+
+real	0m4,347s
+user	0m2,641s
+sys	0m2,077s

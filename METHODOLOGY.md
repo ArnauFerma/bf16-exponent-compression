@@ -9,7 +9,7 @@ claim as unsupported.
 
 ## 1. The question, and the rule for answering it
 
-**Hypothesis under test (recorded before any measurement, commit `098cf3b`):**
+**Hypothesis under test (recorded before any GPU was available, commit `098cf3b`):**
 a "ladder" prefix code over the BF16 exponent, with a 10-byte table, decodes
 faster on GPU than canonical Huffman with a 4 KiB LUT, at a cost of <1 point of
 compression.
@@ -51,7 +51,7 @@ This matters, and it is the first thing a reader should know:
 | Experiment | Symbols | Which ones | Why |
 |---|---|---|---|
 | Entropy, code tables, compression ratios (Phase 1) | 596,049,920 | all unique | Exact histogram; sizes computed analytically from it |
-| CPU bit-exact roundtrip (Phase 1) | 2,000,000 | random with replacement, over the whole file | Pure-Python bitstream of 596M symbols is infeasible on the dev machine; a prefix code is memoryless per symbol, so a sample with the full-distribution table tests the same code paths (the escape branch was hit 10,165 times) |
+| CPU bit-exact roundtrip (Phase 1) | 2,000,000 | random with replacement, over the whole file | Pure-Python bitstream of 596M symbols is infeasible on the dev machine; a prefix code is memoryless per symbol, so a sample with the full-distribution table tests every codeword it contains (the escape branch was hit 10,165 times). The committed run's sample held 31 of the 43 exponents present; `bench.py` now appends one of each present symbol, so later runs cover all 43 |
 | GPU kernel verification (`verify_kernels.py`) | 32,000,000 | the **first** 32M | Contiguous chunk is what the kernels consume |
 | GPU timing (all `bench_*.py`) | 64,000,000 | the **first** 64M | Same |
 | Mutual information (Phase 2c) | 6 windows | spread across the file at fixed offsets | Explicitly to avoid the bias below |
@@ -98,7 +98,7 @@ configuration is lower (32.39% for the best configuration, computed from the
 full histogram). Both numbers are reported where they appear. (b) The
 **timing** conclusions do not depend on the distribution: the access-pattern
 and index effects are structural, and the two bitstreams being compared differ
-by <1 MB either way. (c) All Huffman and ladder **tables** are always built
+by about 1 MB either way. (c) All Huffman and ladder **tables** are always built
 from the full histogram, never from the sample.
 
 ## 3. Hardware and software
@@ -109,12 +109,13 @@ from the full histogram, never from the sample.
 |---|---|---|---|
 | Dev machine (Linux) | Phase 1, all CPU analysis, all writing | none | 3.5 GiB RAM + 3.5 GiB swap. This is why extraction streams and why the CPU roundtrip is sampled. |
 | Measurement machine (Windows, WDDM driver model) | Phases 2, 2b, 2c and their replication | NVIDIA GeForce GTX 1050 Ti: Pascal, SM 6.1, 6 SMs, 4 GB GDDR5, 1 MiB L2, theoretical peak 112.1 GB/s (computed from `memoryClockRate` and `memoryBusWidth`) | Also drives the desktop. Clocks cannot be locked under WDDM. |
-| RunPod Secure Cloud container (Linux, Ubuntu 24.04 image `runpod/pytorch:1.0.3-cu1281-torch291-ubuntu2404`) | Phase 2e | NVIDIA A100-SXM4-80GB: Ampere, SM 8.0, 108 SMs, 40 MiB L2, peak 2039 GB/s | Rented 2026-09-13, ~46 min. Clock locking refused by the host; SM clock read 1140 MHz. |
-| RunPod Secure Cloud container (same image) | Phase 2e | NVIDIA GeForce RTX 4090: Ada, SM 8.9, 128 SMs, 72 MiB L2, peak 1008 GB/s | Rented 2026-09-13, ~40 min. Clock locking refused; SM clock read 2520 MHz. |
+| RunPod Secure Cloud container (Linux, Ubuntu 24.04 image `runpod/pytorch:1.0.3-cu1281-torch291-ubuntu2404`) | Phase 2e | NVIDIA A100-SXM4-80GB: Ampere, SM 8.0, 108 SMs, 40 MiB L2, peak 2039 GB/s | Rented 2026-09-13, ~46 min. Clock locking refused by the host; SM clock sampled during timing 1410 MHz (`gpu_bench.json`; `gpu_info.txt`'s single read before warm-up says 1140). |
+| RunPod Secure Cloud container (same image) | Phase 2e | NVIDIA GeForce RTX 4090: Ada, SM 8.9, 128 SMs, 72 MiB L2, peak 1008 GB/s | Rented 2026-09-13, ~40 min. Clock locking refused; SM clock sampled during timing 2715–2760 MHz (pre-warm-up read: 2520). |
 
-The rented runs follow `RENT_A_GPU.md` exactly, with the repository uploaded
-as a `git archive` of the commit in use instead of cloned (the repository
-was private at the time). Each pod ran `setup_cloud.sh` (model download,
+The rented runs follow `RENT_A_GPU.md`, except that both pods ran on Secure
+Cloud (Community had no stock) and the repository was uploaded as a
+`git archive` of the commit in use instead of cloned (the repository was
+private at the time). Each pod ran `setup_cloud.sh` (model download,
 extraction with the duplicate dropped, bit-exact verification) and
 `run_all.sh` unattended; both verified `RESULT: both kernels correct` before
 timing. The operator guides for a borrowed RTX 4070 describe a run that has
@@ -147,27 +148,37 @@ compiler flags beyond CuPy's defaults.
 
 ## 4. Correctness protocol
 
-Every kernel is verified **bit-exact against the original exponent array
-before any timing is taken**, never after. Concretely:
+Kernels are verified **bit-exact against the original exponent array**,
+before timing wherever the harness checks at all. Concretely:
 
 1. **Encoder equivalence.** `bitpack.py` (vectorised numpy) produces a
    bitstream verified **byte-for-byte identical** to the reference Python
    `BitWriter` in `ladder_codec.py` / `df11_reference.py`, including the block
    offsets. So the GPU decoders are tested against the same stream the
    reference codecs would produce.
-2. **Kraft inequality** is checked for every code table (`ladder_codec.py`).
-   A code with Kraft > 1 is undecodable; this was learned the hard way before
-   the repository existed.
-3. **GPU roundtrip.** `verify_kernels.py BLOCK N` decodes N symbols on the GPU
-   and compares with `np.array_equal` against the source array. On failure it
-   prints the first mismatching positions. The kernel variants added in Phases
-   2b and 2c are verified the same way inside their own harnesses (the `ok`
-   column in `bench_idx8.py`, the checks in `bench_opt.py`), and all 20
-   BLOCK x threads combinations were re-verified after the barrier bug in
-   Phase 2b.
+2. **Kraft inequality** is asserted for every code table when it is built
+   (`build_ladder` in `ladder_codec.py`, `canonical_huffman` in
+   `df11_reference.py`). A code with Kraft > 1 is undecodable; this was
+   learned the hard way before the repository existed.
+3. **GPU roundtrip.** `verify_kernels.py BLOCK N` decodes N symbols with both
+   base kernels at one BLOCK and compares with `np.array_equal` against the
+   source array. On failure it prints the first mismatching positions and
+   exits non-zero. The kernel variants added in Phases 2b and 2c are checked
+   on the 64M timing sample inside their own harnesses, on every
+   configuration they time (the `ok` column of `bench_opt.py`,
+   `bench_head2head.py` and `bench_idx8.py`); the check runs before timing,
+   except for `bench_opt.py`'s base-kernel row, which is checked right after.
+   `bench_opt.py`'s 5 x 4 sweep is how all 20 BLOCK x threads combinations of
+   the ladder base kernel were re-verified after the barrier bug in Phase 2b.
+   `bench_gpu.py` (the base-kernel sweep and the floor) has no check of its
+   own.
 4. **Setup scripts abort on failure.** `setup_*.{sh,ps1}` run
    `verify_kernels.py 256 32000000` and exit non-zero if either kernel is
-   wrong, so a remote operator cannot produce timings from a broken decoder.
+   wrong, on Linux and on Windows, so a remote operator cannot produce
+   timings from a broken decoder. (`setup_windows.ps1` checks the exit code
+   since 2026-09-26; before that it printed "Done" even on a failure. The
+   1050 Ti replication ran with the older script; every row of its three
+   checking harnesses reports `si` (yes) in the `ok` column.)
 
 ## 5. Timing protocol
 
@@ -178,18 +189,24 @@ Defined in `bench_gpu.py::measure` and reused by every later harness:
 - **Warm-up:** the kernel is launched repeatedly for 0.6 s with a
   synchronisation after each launch, so the GPU is at boost clock and no
   launches are queued when timing starts.
-- **Repetitions:** 11. Reported value is the **median**; the IQR is reported
-  next to it and is the noise estimate.
+- **Repetitions:** 11. Reported value is the **median**. Every harness
+  computes the IQR, but only `bench_gpu.py` records it: printed next to the
+  median rounded to whole ms, and exact in `gpu_bench.json`. The other three
+  harnesses print the median only.
 - **Order:** the list of (BLOCK, threads) configurations is shuffled with a
   fixed seed (`random.Random(0)`) so that clock drift over the run does not
   correlate with configuration.
 - **Clock:** `nvidia-smi --query-gpu=clocks.sm` is sampled before and after
-  each configuration and stored alongside the time. On the 1050 Ti it ranges
-  139–1923 MHz; the rented A100 and 4090 sat at 1140 and 2520 MHz throughout
-  (locking was refused by the host, but the IQR was 0 on every row). A "SM cycles per symbol" figure (ms x MHz x SMs / symbols) is
-  computed as a clock-invariant view.
+  each configuration; `bench_gpu.py` stores it alongside the time
+  (`gpu_bench.json`, field `mhz`), the other harnesses discard it. Sampled
+  values: 1695–1708 MHz on the 1050 Ti (replication), 1410 MHz on every A100
+  row, 2715–2760 MHz on the 4090. Locking was refused by the host on both
+  rented cards; the IQR there was at most 2.0% (A100) and 1.0% (4090) of the
+  median, and at most 6.2% on the 1050 Ti replication. A "SM cycles per
+  symbol" figure (ms x MHz x SMs / symbols) is computed as a clock-invariant
+  view.
 - **Environment:** everything else using the GPU is closed. On the
-  measurement machine this took the IQR from ~5 ms to 0–3 ms. Under
+  measurement machine this took the printed IQR from ~5 ms to 0–3 ms. Under
   Linux, `run_all.sh` additionally tries `nvidia-smi -lgc` to lock clocks;
   this was not available on the measurement machine.
 - **Throughput (GB/s)** is `bytes moved / time`, where bytes moved = compressed
@@ -201,16 +218,21 @@ Defined in `bench_gpu.py::measure` and reused by every later harness:
 `mem_floor` (in `bench_gpu.py`) reads exactly the same 32-bit words each
 decoder thread would read and writes the same output bytes, but performs no
 decoding. It is an empirical ceiling **for that access pattern**, not for the
-hardware: Phase 2b showed the pattern itself was the bottleneck. Note that
-`mem_floor` is fed the **ladder** bitstream; the Huffman stream is ~4.8%
-smaller, so the floor is very slightly pessimistic for Huffman.
+hardware: Phase 2b showed the pattern itself was the bottleneck. In every
+committed log (`1_bench_base.txt`, `gpu_bench.json`) `mem_floor` was fed the
+**ladder** bitstream only, and h/floor divides Huffman times by it; the
+Huffman stream is ~4.8% smaller, so those h/floor ratios are very slightly
+optimistic for Huffman. `bench_gpu.py` now runs the floor on each codec's own
+stream ("floor h" and "floor l" columns, `floor_h` and `floor` keys in the
+JSON), so h/floor and l/floor each compare equal traffic; this applies to
+runs from 2026-09-26 on.
 
 ### Attribution discipline
 
 - When two optimisations are candidates, **all combinations are compiled and
-  measured separately** (Phase 2b: 4 variants of input x output staging). The
-  result that "both" is worse than "output alone" would have been invisible
-  otherwise.
+  measured separately** (Phase 2b: 4 variants of input x output staging,
+  timed on the ladder kernel). The result that "both" is worse than "output
+  alone" would have been invisible otherwise.
 - When an optimisation moves the bottleneck, **earlier comparisons are re-run,
   not extrapolated** (Phase 2b redid the Huffman-vs-ladder comparison with the
   optimised kernel; Phase 2b also re-ran the Phase 2 sweep after the barrier
@@ -245,14 +267,15 @@ estimated from a sample.
 
 - Exponent entropy `H(X)` from the exact histogram.
 - Mutual information between adjacent exponents `I(X;Y) = H(X) + H(Y) − H(X,Y)`
-  from the joint histogram of consecutive pairs, in six windows at offsets
-  0, 93,954,048, 187,908,096, 375,816,192, 563,724,288 and 711,632,384 —
-  offsets into the file **as extracted before the duplicate `lm_head` was
-  dropped**; the windows are real weight data either way, but to reproduce
-  them exactly, extract with the duplicate kept.
-- Order-1 context model: `H(Y | X)` from the same joint histogram.
-- "Huffman over pairs" rate: canonical Huffman built on the pair alphabet
-  (421 pairs observed in the sample), rate computed analytically.
+  from the joint histogram of consecutive pairs, in six windows of 32M
+  symbols at offsets 0, N/8, N/4, N/2, 3N/4 and N − 40M of the deduplicated
+  file (N = 596,049,920; log in `results/cpu/analysis_index.txt`). The table
+  first published was measured on the file with the duplicate kept, and its
+  log was not saved.
+- `H(Y | X)` from the same joint histogram.
+- Order-1 context model and "Huffman over pairs" rate: on the first 64M
+  symbols (421 pairs observed), canonical Huffman built on the pair alphabet,
+  rate computed analytically (log in `results/cpu/analysis_vector.txt`).
 - **Cross-field mutual information (Phase 2d):** one exact histogram of the
   full 16-bit value over all 596,049,920 unique weights (65,536 bins); every
   marginal and pair histogram (sign, exp, mant, exp×mant, sign×exp,
@@ -273,10 +296,13 @@ appears.
    repeats every kernel measurement on one A100 and one RTX 4090, both in
    rented containers. The L2 explanation is now supported as a trend across
    three points and corrected as a threshold (RESULTS Phase 2e). The
-   "decoder time follows SM clock" reading rests on two cards and is stated
+   "decoder time falls roughly with SM clock" reading rests on two cards and
+   is stated
    as consistent-with, not shown.
 2. **Clocks not locked.** Mitigated as described in section 5; the IQR is
-   published next to every median. The full replication run (section 10)
+   recorded for the base-kernel sweep only (at most 6.2% of the median on the
+   1050 Ti, 2.0% on the A100, 1.0% on the 4090), not for the attribution,
+   head-to-head and index harnesses. The full replication run (section 10)
    puts the run-to-run spread of absolute times at 1–6%; ratios between
    variants measured in the same run are stable to about 1%.
 3. **The timing sample is the embedding matrix.** See section 2.
@@ -290,7 +316,8 @@ appears.
    code.
 7. **No end-to-end inference measurement.** Kernel time is not tokens/s.
 8. **No profiler data.** See section 5.
-9. **Software versions on the measurement machine not recorded.** See
+9. **Software versions not recorded for the transcribed 1050 Ti runs.**
+   They were recorded for the replication on the same machine; see
    section 3.
 10. **Analytic sizes.** They are exact for the counted symbols, but a real file
    would carry a header and alignment padding not included here.
@@ -313,13 +340,17 @@ executes, in order: `bench_gpu.py` (Phase 2 sweep + floor), `bench_opt.py`
 leaves `results.tar.gz` (`results.zip` on Windows) with one text log per stage plus
 `gpu_bench.json`, `gpu_info.txt` and `env_info.json`.
 
-CPU-only parts (`bench.py`, `analysis_*.py`) need only the extracted weights
-and run on any machine with ~2 GB free RAM.
+CPU-only parts (`bench.py`, `analysis_*.py`) need the extracted weights from
+the setup script, and `bench.py` also needs the synthetic file: run
+`python gen_weights_bf16.py` (writes `outputs/weights_bf16.bin`) before
+`python bench.py`. They run on any machine with ~2 GB free RAM.
 
 What to compare against: the tables in RESULTS.md, one per script, with the
-IQR column as the tolerance. A different GPU is *expected* to give different
-absolute times; the claims that should transfer are the ratios (output
-staging ≈ 1.9x, index ≈ free, ladder ≥ Huffman time) and the BLOCK cliff
+run-to-run spread of section 10 (1–6% in absolute times, about 1% in
+same-run ratios) as the tolerance. A different GPU is *expected* to give
+different absolute times; the claims that should transfer are the ratios
+(output staging of the ladder kernel ≈ 1.9x or more, index ≈ free, ladder
+not faster than Huffman at Huffman's best configuration) and the BLOCK cliff
 prediction in HANDOFF 4.1.
 
 Expected first check on any new card: `L2 per resident thread` printed by the
@@ -328,12 +359,16 @@ not, the machine is not what it claims to be.
 
 ## 10. Raw data
 
-Committed under `results/`, one directory per machine, so every table in
-RESULTS.md can be checked against the log it was transcribed from:
+Committed under `results/`, one directory per machine, so that the tables in
+RESULTS.md can be checked against the log they came from. The exceptions,
+with no committed log, are listed after this list.
 
 - `results/cpu/` — Phase 1: `bench_results.json`, `bench_log.txt`, and the
   extractor's log, all from the deduplicated re-run; `analysis_fields.txt`
-  is the Phase 2d log. `*.pre-dedup.*` are the
+  is the Phase 2d log; `analysis_vector.txt` and `analysis_index.txt` are
+  the Phase 2c analysis logs, from a re-run on 2026-09-26 on a regenerated
+  weight file whose exponent counts are byte-identical to the committed
+  run's. `*.pre-dedup.*` are the
   same outputs from the original run with `lm_head` counted twice, kept so
   the pre-correction tables in git history can be audited too. Produced on
   the dev machine.
@@ -367,9 +402,13 @@ RESULTS.md can be checked against the log it was transcribed from:
   same kernel's time in the head-to-head stage of the same run. The claim
   supported by both runs is "not slower", not a precise delta.
 
-  The logs predate the translation of the code's printed strings, so their
-  column headers are Spanish: *suelo* = floor, *simbolos* = symbols,
-  *variante* = variant, *indice* = index, *bloque* = block, *si* = yes,
+  The logs predate the translation of the code's printed strings and the
+  repository's current output format, so their labels are Spanish. The
+  translation did not change the logic that produced them: commit `958cbbf`
+  changed only strings and comments (checked token by token), and later
+  commits to the GPU harnesses and kernels, up to 2026-09-26, changed only a
+  printed string in `bench_gpu.py`. Column headers: *suelo* = floor,
+  *simbolos* = symbols, *variante* = variant, *indice* = index, *bloque* = block, *si* = yes,
   *escalera* = ladder, *excede* = exceeds. The numbers are what they are.
 
   The text logs begin with PowerShell `NativeCommandError` noise: CuPy prints
@@ -384,6 +423,23 @@ a machine, an account or a person. The one exception is Nsight Compute's CSV
 output, whose process column carries the interpreter's path (which can
 include a user name): `results/*/ncu_out/` is git-ignored and must be scrubbed
 by hand before being added.
+
+**Numbers with no committed log.** They come from interactive runs whose
+console output was not saved; the replication above is the committed
+evidence for them:
+
+- every GTX 1050 Ti table in RESULTS.md Phases 2, 2b and 2c (base sweep,
+  attribution, head-to-head, index), including the 4.80, 4.81 and 4.82 ms
+  headline times, 5.07 ms, the 12.83 vs 26.14 ms anomaly and the barrier-fix
+  re-run (9.71/9.74 ms), and the 1050 Ti values RESULTS.md Phase 2e quotes
+  from them (4.38x, the 1.055 ladder/Huffman ratios);
+- the same figures where HANDOFF.md, README.md and the report quote them
+  (report §5.3: 4.80 and 5.07 ms; §5.4: the 1050 Ti column, 4.81 and 4.82 ms);
+- the "0–3 ms" and "~5 ms" IQRs on the 1050 Ti.
+
+The first published table of neighbour mutual information (pre-dedup file)
+had no log either; it has been replaced by the logged re-run
+(`analysis_index.txt`).
 
 The 1.5 GB weight file and the model are not committed; they are regenerated
 by the setup scripts from the Hugging Face source and can be checked against

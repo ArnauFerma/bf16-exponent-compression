@@ -7,8 +7,12 @@ that moves the same traffic without decoding is measured alongside. Close to
 the floor => memory dominates and the entropy code is irrelevant. Far above
 it => compute dominates and the ladder has room to win.
 
-Method (this GPU cannot lock clocks: a consumer card under WDDM that also
-drives the desktop, so the clock swings between 607 and 1923 MHz):
+The floor kernel runs on each codec's own bitstream ("floor_h" on Huffman's,
+"floor" on the ladder's), so h/floor and l/floor each compare equal traffic.
+
+Method (written for the GTX 1050 Ti, which cannot lock clocks: a consumer
+card under WDDM that also drives the desktop, so the clock swings between
+607 and 1923 MHz; on Linux run_all.sh tries to lock them):
   - sustained warm-up per configuration to bring the clock to boost
   - SM clock sampled around each measurement
   - randomised configuration order, to decorrelate drift
@@ -117,8 +121,8 @@ def main():
 
     out = {}
     for block, threads in configs:
-        for cname in ("huffman", "ladder", "floor"):
-            src = "ladder" if cname == "floor" else cname
+        for cname in ("huffman", "ladder", "floor_h", "floor"):
+            src = {"floor_h": "huffman", "floor": "ladder"}.get(cname, cname)
             d_words, starts, total_bits = streams[src]
             offs = to_u32_index(starts[::block], total_bits)
             d_offs = cp.asarray(offs)
@@ -143,16 +147,17 @@ def main():
                 ms=ms, iqr=iqr, mhz=mhz, gbs=moved / (ms * 1e-3) / 1e9,
                 cyc_per_sym=ms * 1e-3 * mhz * 1e6 * n_sm / expo.size)
 
-    hdr = (f"{'BLOCK':>6}{'thr':>5} | {'huff ms':>9}{'ladd ms':>9}{'floor':>8} | "
+    hdr = (f"{'BLOCK':>6}{'thr':>5} | {'huff ms':>9}{'ladd ms':>9}{'floor h':>8}{'floor l':>8} | "
            f"{'cycles/symbol':>16} | {'h/floor':>8}{'l/floor':>8}{'l/h':>7}")
     print(hdr); print("-" * len(hdr))
     for block in (64, 128, 256, 512, 1024):
         for threads in (64, 128, 256):
-            h, l, f = (out[(block, threads, c)] for c in ("huffman", "ladder", "floor"))
+            h, l, fh, fl = (out[(block, threads, c)]
+                            for c in ("huffman", "ladder", "floor_h", "floor"))
             print(f"{block:6d}{threads:5d} | {h['ms']:7.2f}±{h['iqr']:3.0f}"
-                  f"{l['ms']:7.2f}±{l['iqr']:3.0f}{f['ms']:7.2f} | "
+                  f"{l['ms']:7.2f}±{l['iqr']:3.0f}{fh['ms']:8.2f}{fl['ms']:8.2f} | "
                   f"h={h['cyc_per_sym']:5.1f} l={l['cyc_per_sym']:5.1f} | "
-                  f"{h['ms']/f['ms']:8.2f}{l['ms']/f['ms']:8.2f}{l['ms']/h['ms']:7.3f}")
+                  f"{h['ms']/fh['ms']:8.2f}{l['ms']/fl['ms']:8.2f}{l['ms']/h['ms']:7.3f}")
 
     json.dump({f"{b}_{t}_{c}": v for (b, t, c), v in out.items()},
               open("outputs/gpu_bench.json", "w"), indent=2)

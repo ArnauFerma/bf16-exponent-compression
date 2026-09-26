@@ -1,4 +1,4 @@
-import numpy as np, struct, math, json
+import numpy as np, json
 
 rng = np.random.default_rng(1234)
 
@@ -53,11 +53,9 @@ symbols = [(int(c), i) for i, c in enumerate(counts) if c > 0]
 import heapq
 h = [(c, i, None, None) for c, i in symbols]
 heapq.heapify(h)
-nodes = {}
 nxt = 256
 while len(h) > 1:
     a = heapq.heappop(h); b = heapq.heappop(h)
-    nodes[nxt] = (a, b)
     heapq.heappush(h, (a[0]+b[0], nxt, a, b))
     nxt += 1
 root = h[0]

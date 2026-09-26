@@ -18,7 +18,10 @@ NCU=ncu
 # The counters need permissions: either the module with
 # NVreg_RestrictProfilingToAdminUsers=0, or sudo.
 if ! $NCU --version >/dev/null 2>&1; then echo "ncu not found"; exit 1; fi
-if ! $NCU --metrics gpu__time_duration.sum $PY -c "pass" >/dev/null 2>&1; then
+# The probe must launch a kernel: without one ncu collects nothing and
+# reports no permission error. profile_run.py with a tiny N launches two.
+probe=$($NCU --metrics gpu__time_duration.sum $PY profile_run.py --n 4096 --block 64 2>&1)
+if [[ "$probe" == *ERR_NVGPUCTRPERM* ]]; then
     echo "no counter permissions -> using sudo"
     NCU="sudo $NCU"
 fi

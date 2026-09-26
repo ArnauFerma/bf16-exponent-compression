@@ -15,16 +15,25 @@ try:
 except ImportError:
     info["numpy"] = None
 
+def cc_str(cc):
+    """cupy gives the compute capability as "86" or "120"; the last digit is
+    the minor version."""
+    return f"{cc[:-1]}.{cc[-1]}"
+
 try:
     import cupy as cp
     info["cupy"] = cp.__version__
+except ImportError:
+    info["cupy"] = None
+
+def gpu_info():
     info["cuda_runtime"] = cp.cuda.runtime.runtimeGetVersion()
     info["cuda_driver_api"] = cp.cuda.runtime.driverGetVersion()
     p = cp.cuda.runtime.getDeviceProperties(0)
     resident = p["multiProcessorCount"] * p["maxThreadsPerMultiProcessor"]
-    info["gpu"] = {
+    return {
         "name": p["name"].decode(),
-        "compute_capability": ".".join(cp.cuda.Device(0).compute_capability),
+        "compute_capability": cc_str(cp.cuda.Device(0).compute_capability),
         "sms": p["multiProcessorCount"],
         "l2_bytes": p["l2CacheSize"],
         "l2_bytes_per_resident_thread": round(p["l2CacheSize"] / resident, 1),
@@ -32,8 +41,15 @@ try:
         "peak_bandwidth_gbs": round(
             2 * p["memoryClockRate"] * 1e3 * (p["memoryBusWidth"] / 8) / 1e9, 1),
     }
-except ImportError:
-    info["cupy"] = None
+
+if info["cupy"] is not None:
+    try:
+        info["gpu"] = gpu_info()
+    except Exception as e:           # cupy installed, but no GPU or no driver
+        info["gpu"] = None
+        print(f"No usable CUDA GPU ({type(e).__name__}: {e}).\n"
+              "GPU fields not recorded: the GPU benchmarks need a CUDA GPU.",
+              file=sys.stderr)
 
 try:
     o = subprocess.run(["nvidia-smi", "--query-gpu=driver_version",

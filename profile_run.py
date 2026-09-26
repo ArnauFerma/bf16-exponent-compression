@@ -7,13 +7,17 @@ configurations): unworkable under ncu, which replays each kernel several
 times to read the counters. Here it is exactly 1 warm-up + 1 measured, and
 the second is profiled with --launch-skip 1 --launch-count 1.
 
-N defaults to 64M and should NOT be lowered: at BLOCK=1024 that is 62,500
-threads, just above the 43,008 resident on an RTX 3060. With a smaller N the
-GPU is not full and the measured occupancy means nothing.
+N defaults to 64M: one thread per block of symbols gives 1,000,000 threads
+at BLOCK=64, 250,000 at BLOCK=256 and 62,500 at BLOCK=1024. The cards in
+results/ hold 12,288 resident threads (GTX 1050 Ti), 196,608 (RTX 4090) and
+221,184 (A100); see sms and l2_bytes_per_resident_thread in their
+env_info.json. The 1050 Ti is full at every BLOCK; the 4090 and A100 are not
+full at BLOCK=512 or 1024, so occupancy measured there reflects the launch
+size, not the kernel. A smaller N makes this worse.
 
     python profile_run.py --block 256 --threads 128 --codec ladder
 """
-import argparse, os
+import argparse, hashlib, os
 import numpy as np, cupy as cp
 import bitpack as bp, gpu_kernels as gk
 from bench_gpu import _floor_k, to_u32_index
@@ -40,8 +44,10 @@ else:
     d_slots = cp.asarray(gk.ladder_slots_flat(slots))
 
 # On-disk cache: profile_ncu.ps1 calls this script 15 times and encoding
-# 64M symbols in numpy takes ~1 min. Without it, ~15 min wasted.
-cache = f"outputs/cache_{a.codec if a.codec != 'floor' else 'ladder'}_{a.n}.npz"
+# 64M symbols in numpy takes ~1 min. Without it, ~15 min wasted. The name
+# carries a hash of counts, so a changed code table never reuses a stale cache.
+tag = hashlib.sha256(counts.tobytes()).hexdigest()[:12]
+cache = f"outputs/cache_{src}_{a.n}_{tag}.npz"
 if os.path.exists(cache):
     z = np.load(cache)
     packed, lens = z["packed"], z["lens"]

@@ -85,6 +85,6 @@ for block in (64, 128, 256):
             print(f"{block:6d}{threads:5d}{name:>9}{'uint8+ps':>10} | {ms8:7.2f} "
                   f"{moved8/(ms8*1e-3)/1e9:7.2f} | {idx_b:9.3f}"
                   f"{reduction(avg_bits, block, idx_b):10.2f}% | {'yes' if ok8 else 'NO'}"
-                  f"   ({ms32/ms8:.3f}x time, "
+                  f"   ({ms32/ms8:.3f}x speedup, "
                   f"{reduction(avg_bits,block,idx_b)-reduction(avg_bits,block,4.0):+.2f} pts)")
     print()

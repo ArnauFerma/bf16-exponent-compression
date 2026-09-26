@@ -11,7 +11,7 @@ Test bench: DFloat11-style lossless compression of BF16 weights.
 Usage:
     python3 df11_reference.py outputs/weights_bf16.bin
 """
-import sys, heapq, struct
+import sys, heapq
 import numpy as np
 
 BLOCK = 256          # symbols per block (unit of parallelism)
@@ -34,6 +34,7 @@ def canonical_huffman(counts):
         heapq.heappush(heap, (c1 + c2, 0, s1 + s2))
 
     lengths = {s: depth[s] for _, s in syms}
+    assert sum(2.0 ** -l for l in lengths.values()) <= 1, "Kraft inequality violated"
 
     # canonical assignment: sort by (length, symbol) and count up
     order = sorted(lengths, key=lambda s: (lengths[s], s))
@@ -100,7 +101,6 @@ def encode(bf16):
 
 def decode(blob):
     lengths = blob["lengths"]
-    _, codes = None, None
     # rebuild the canonical code from the lengths alone (that is what is transmitted)
     order = sorted(lengths, key=lambda s: (lengths[s], s))
     codes, code, prev = {}, 0, lengths[order[0]]

@@ -41,8 +41,8 @@ The figure that governs the effect is **not** L2 size or raw speed, but
 Two reasons:
 
 1. **It fills the middle of the range.** The cards available for free sit at
-   the extremes (85 B and 534 B). With the A100 there are four spread points:
-   85 -> 190 -> 384 -> 534.
+   the extremes (85 B and 534 B). With the A100 there are three spread
+   points, 85 -> 190 -> 534; with the RTX 4090 (384), rented as well, four.
 2. **It is DFloat11's target hardware.** Any claim becomes directly
    comparable with their published numbers, instead of a discussion about
    consumer cards.
@@ -154,6 +154,10 @@ help:
 > explanation is right, that ratio should shrink a lot as L2 per thread
 > grows, and staging the **input** in shared should stop helping at
 > BLOCK=256, because the data already fits in cache.
+
+Measured afterwards on the 1050 Ti (`results/gtx1050ti/1_bench_base.txt`,
+Huffman, base kernel): 14.9x at 64 threads, 16.2x at 128 and 16.3x at 256;
+15.9x at 128 threads in the run transcribed in RESULTS.md Phase 2.
 
 The files to look at inside `results.tar.gz`:
 

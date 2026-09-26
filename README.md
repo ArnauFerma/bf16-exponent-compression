@@ -11,7 +11,9 @@ already close to maximal; all the headroom is in the exponent (2.65 bits of 8).
 
 The project's original hypothesis — a **ladder code** with a 10 B table
 instead of Huffman's 4 KiB hierarchical LUT — **has been refuted**: it is
-0.86 points worse on compression *and* 5% to 43% slower. But the work produced
+0.86 points worse on compression *and* never meaningfully faster: at each
+block size's fastest Huffman configuration it is 4% to 58% slower, and at the
+operating point it at best ties (A100). But the work produced
 a considerably better codec by another route.
 
 ## Best measured configuration
@@ -26,16 +28,23 @@ a considerably better codec by another route.
 
 2.01x faster and +2.25 points, from two changes that **do not touch the
 entropy code**: coalescing the output write, and replacing the uint32 offset
-index with 8-bit lengths plus a warp prefix-sum.
+index with 8-bit lengths plus a warp prefix-sum. The 4.82 ms comes from an
+interactive run whose console output was not saved; the committed
+replication on the same card gives 4.85 ms ([METHODOLOGY.md](METHODOLOGY.md),
+section 10).
 
 The design was found on a GTX 1050 Ti (Pascal, 1 MiB L2) and then measured
 unchanged on a rented A100 and RTX 4090 (`results/`):
 
 | best configuration, 64M symbols | GTX 1050 Ti | A100 | RTX 4090 |
 |---|---|---|---|
-| time | 4.8 ms | 0.44 ms | 0.20 ms |
-| ladder / Huffman | 1.05 | ~1.0 | 1.3 |
+| time | 4.8 ms | 0.47 ms | 0.19 ms |
+| ladder / Huffman, BLOCK=64, each at its best thread count | 1.05 | 0.98 | 1.1 |
 | 8-bit index cost | none | none | none |
+
+Times are the 8-bit index runs (`4_bench_idx8.txt`); the ladder/Huffman row
+is from the uint32-index head-to-head (`3_head2head.txt`), where Huffman's
+best is 0.44 ms (A100) and 0.20 ms (RTX 4090).
 
 The Pascal "BLOCK cliff" that shaped Phase 2 is an L2 effect: 16x on the
 1050 Ti, 2x on the A100, 1.7x on the 4090. The timing sample is the model's
@@ -70,8 +79,8 @@ powershell -ExecutionPolicy Bypass -File run_all.ps1
 
 `setup_*` installs dependencies, downloads Qwen3-0.6B, extracts the weights and
 **verifies that the kernels decompress bit-exactly**. If that verification
-fails the script exits with an error on purpose: timings from an incorrect
-decompressor are worthless.
+fails the script exits with an error on purpose (Linux and Windows alike):
+timings from an incorrect decompressor are worthless.
 
 `run_all` records the environment, runs the five measurement stages into
 `results/<gpu-name>/` and packages them as `results.tar.gz` / `results.zip`.
@@ -112,11 +121,15 @@ commit carries a `Co-Authored-By` trailer and a link to the session in which
 it was produced, so the division of labour can be audited from the git
 history rather than taken on trust.
 
+The rules the work follows (evidence, wording, logs, tests, publishing) are in
+[NORMS.md](NORMS.md), shared by all the repos of this project.
+
 **Verification of what is written here.** Before publication, Claude Code
-was also used to audit the repository against its own evidence: every number
-in the documents was traced to the raw log or histogram it came from
-(`results/`), the whole-model figures were recomputed from the exact counts,
-the transcribed GPU tables were checked against a fresh replication on the
+was also used to audit the repository against its own evidence: the numbers
+in the documents were checked against the raw log or histogram they came
+from (`results/`), the whole-model figures were recomputed from the exact
+counts, the GTX 1050 Ti tables transcribed from unsaved runs (listed in
+METHODOLOGY.md section 10) were checked against a fresh replication on the
 same card, and every literature claim that supports a conclusion was checked
 against the primary text of the paper rather than a summary of it. That
 process found and corrected two errors of its own making — a duplicated
@@ -125,7 +138,9 @@ competing method that a paper summary asserted and the paper does not — and
 both corrections are recorded where they apply. The intent is that nothing
 stated as measured is assumed, and nothing attributed to a source is
 paraphrased from memory; where a number could not be traced, the documents
-say so instead.
+say so instead. A later independent review (2026-09-26) found further
+errors; they are corrected in place and listed in the report's Corrections
+section (`paper/report.md`).
 
 Any remaining error in the code, the numbers or the conclusions is the
 author's responsibility. Nothing here has been peer-reviewed. The

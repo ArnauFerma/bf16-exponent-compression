@@ -7,7 +7,14 @@ echo "== GPU =="
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv
 
 echo -e "\n== system dependencies =="
-if ! python3 -m venv --help >/dev/null 2>&1; then
+# "venv --help" works even without python3-venv (ensurepip missing), so
+# create a throwaway venv to test it for real
+venv_ok() {
+    local d r; d=$(mktemp -d)
+    python3 -m venv "$d/v" >/dev/null 2>&1; r=$?
+    rm -rf "$d"; return $r
+}
+if ! venv_ok; then
     echo "python3-venv missing; installing (asks for sudo)"
     sudo apt-get update -qq && sudo apt-get install -y python3-venv python3-dev
 fi

@@ -55,6 +55,7 @@ def build_ladder(counts, rung_bits=DEFAULT_RUNG_BITS, raw_bits=RAW_BITS):
     for sym in escape_syms:
         lengths[sym] = escape_length
 
+    assert kraft_sum(lengths) <= 1, "Kraft inequality violated"
     return lengths, slots, escape_syms
 
 

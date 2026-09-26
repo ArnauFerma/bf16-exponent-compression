@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Correctness + timing of the 4 variants of the optimised kernel."""
-import sys, time
+import sys
 import numpy as np, cupy as cp
 import bitpack as bp, gpu_kernels as gk, kernel_opt as ko
-from bench_gpu import _floor_k, to_u32_index, measure
+from bench_gpu import to_u32_index, measure
 
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 64_000_000
 SMEM_LIMIT = 48 * 1024

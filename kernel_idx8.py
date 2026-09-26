@@ -147,18 +147,26 @@ def build_index8(starts, block, total_bits, threads):
 
     sb_base is padded to cover the whole grid: the spare threads of the last
     CUDA block take part in the prefix-sum (it needs the full warp) and read
-    sb_base[b>>5] before being discarded."""
+    sb_base[b>>5] before being discarded.
+
+    The prefix-sum is exclusive, so the last block's length is never added
+    to any offset. It is left out of the min/max (a short final block must
+    not widen the range) and its code is clamped into 0..255."""
+    if threads % 32:
+        raise ValueError(f"threads={threads} must be a multiple of 32 "
+                         "(the prefix-sum works on whole warps)")
     offs = np.ascontiguousarray(starts[::block]).astype(np.int64)
     n_blocks = offs.size
     ends = np.empty_like(offs)
     ends[:-1] = offs[1:]
     ends[-1] = total_bits
     blens = ends - offs
-    minlen, maxlen = int(blens.min()), int(blens.max())
+    used = blens[:-1] if n_blocks > 1 else blens
+    minlen, maxlen = int(used.min()), int(used.max())
     if maxlen - minlen > 255:
         raise ValueError(f"block length range {maxlen-minlen} > 255; "
                          f"does not fit in 8 bits at BLOCK={block}")
-    len_codes = (blens - minlen).astype(np.uint8)
+    len_codes = np.clip(blens - minlen, 0, 255).astype(np.uint8)
 
     grid = (n_blocks + threads - 1) // threads
     n_sb_pad = (grid * threads + 31) // 32

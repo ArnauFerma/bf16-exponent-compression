@@ -7,11 +7,11 @@ For the real file (~600M weights) the full bitstream is NOT built in pure
 Python (too slow, and not the point here). The compressed size is computed
 analytically from the code lengths and the exact per-exponent counts (exact,
 not estimated). The bit-exact roundtrip check runs on a large random sample
-using the SAME code table derived from the full distribution -- a prefix
-code is memoryless per symbol, so testing the sample tests the codec's
-correctness as well as encoding the whole file would.
+using the SAME code table derived from the full distribution, plus one
+occurrence of every present symbol. A prefix code is memoryless per symbol,
+so this exercises every codeword the whole file would use.
 """
-import json, sys, heapq
+import json, sys
 import numpy as np
 
 sys.path.insert(0, ".")
@@ -118,9 +118,14 @@ def roundtrip_check(bf16_array_or_memmap, sample_size, expo_counts, label,
     rng = np.random.default_rng(seed)
     idx = rng.integers(0, n, size=sample_size)
     sample = np.asarray(bf16_array_or_memmap[idx])   # small copy into RAM
-    expo_sample = ((sample >> 7) & 0xFF).astype(np.int64)
+    expo_random = ((sample >> 7) & 0xFF).astype(np.int64)
+    # append one occurrence of every present symbol, so the rare ones (and the
+    # longest codes) go through the roundtrip even if the sample misses them
+    present = np.flatnonzero(expo_counts).astype(np.int64)
+    expo_sample = np.concatenate([expo_random, present])
 
     print(f"\n--- roundtrip check ({label}, sample={sample_size:,}) ---")
+    print(f"  plus one occurrence of each of the {len(present)} present symbols")
 
     # Huffman
     h_lengths, h_codes = canonical_huffman(expo_counts)
@@ -133,7 +138,6 @@ def roundtrip_check(bf16_array_or_memmap, sample_size, expo_counts, label,
     data = w.flush()
     # decode
     table = {(h_lengths[s], h_codes[s]): s for s in h_codes}
-    maxlen = max(h_lengths.values())
     out = np.empty(len(expo_sample), dtype=np.int64)
     for b in range(len(offsets)):
         r = lc.BitReader(data, offsets[b])
@@ -154,7 +158,7 @@ def roundtrip_check(bf16_array_or_memmap, sample_size, expo_counts, label,
     rec_l = lc.decode_symbols(data_l, offsets_l, len(expo_sample), slots,
                                list(rung_bits), lc.RAW_BITS, block=block)
     ok_l = np.array_equal(rec_l, expo_sample)
-    n_escape_hit = sum(1 for e in expo_sample if int(e) in escape)
+    n_escape_hit = sum(1 for e in expo_random if int(e) in escape)
     print(f"  Ladder   roundtrip lossless: {'YES' if ok_l else 'NO'}  "
           f"(sample hit the escape {n_escape_hit} times)")
 

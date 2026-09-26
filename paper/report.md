@@ -6,7 +6,7 @@ Code, data and logs: https://github.com/ArnauFerma/bf16-exponent-compression · 
 
 ## Abstract
 
-Entropy-coding the exponent field of BF16 weights, as in DFloat11, losslessly removes about a third of the bytes at the cost of a decompression kernel on every forward pass. This report tests whether a fixed-shape prefix code with a 10-byte table (a "ladder" code) decodes faster on a GPU than canonical Huffman with a 4 KiB lookup table, for under one point of compression. It does not: on Pascal, Ampere and Ada the ladder code loses 0.86 points and is never faster where it would be run. The test produced something that does work. Replacing the per-block uint32 offset index with 8-bit block lengths recovered by a warp prefix-sum cuts the index from 4 to 1.125 bytes per block (0.14 bits/weight, against about 0.21 for DFloat11's 5-bit per-thread gaps), adds 2.25 points of compression, and costs nothing measurable on any card. With the output coalesced through shared memory, the reference decoder becomes 2.0x faster and 2.25 points smaller, and decodes 64M symbols in 0.20 ms on an RTX 4090. Exact measurements on Qwen3-0.6B place canonical Huffman 0.033 bits/weight from the exponent-only floor and 0.100 from the true floor of the 16-bit symbol; the field split gives away 0.076 bits/weight. A 16x collapse at large block sizes on Pascal is an L2 effect that shrinks to 2x and 1.7x on cards with more L2 per thread, and the optimised decoder's time tracks SM clock, not bandwidth. Every number traces to a committed log published with the code.
+Entropy-coding the exponent field of BF16 weights, as in DFloat11, losslessly removes about a third of the bytes at the cost of a decompression kernel on every forward pass. This report tests whether a fixed-shape prefix code with a 10-byte table (a "ladder" code) decodes faster on a GPU than canonical Huffman with a 4 KiB lookup table, for under one point of compression. It does not: on Pascal, Ampere and Ada the ladder code loses 0.86 points and at best ties where it would be run. The test produced something that does work. Replacing the per-block uint32 offset index with 8-bit block lengths recovered by a warp prefix-sum cuts the index from 4 to 1.125 bytes per block (0.14 bits/weight, against about 0.21 for DFloat11's 5-bit per-thread gaps), adds 2.25 points of compression, and costs nothing measurable on any card. With the output coalesced through shared memory, the reference decoder becomes 2.0x faster and 2.25 points smaller, and decodes 64M symbols in 0.19 ms on an RTX 4090. Exact measurements on Qwen3-0.6B place canonical Huffman 0.033 bits/weight from the exponent-only floor and 0.100 from the true floor of the 16-bit symbol; the field split gives away 0.076 bits/weight. A 16x collapse at large block sizes on Pascal is an L2 effect that shrinks to 2x and 1.7x on cards with more L2 per thread, and the optimised decoder's time roughly tracks SM clock, not bandwidth. Raw logs are published with the code; the few Pascal figures that come from an earlier, unsaved run are marked as such.
 
 ## 1. Introduction
 
@@ -16,14 +16,14 @@ DFloat11 [1] exploits this: Huffman-code the exponents, store sign and mantissa 
 
 Because the decoder runs on every forward pass, the entropy code looked like the place to find speed. Canonical Huffman needs a table and costs at least one shared-memory access per symbol. A prefix code with a *fixed shape* — count leading ones, read a small index — needs a 10-byte table and decodes with a `clz`, a branch and a shift.
 
-The hypothesis, recorded before any measurement: such a code decodes faster than canonical Huffman on a GPU, giving up under one point of compression.
+The hypothesis, recorded before any GPU was available: such a code decodes faster than canonical Huffman on a GPU, giving up under one point of compression.
 
 **It does not.** This report describes the test, and what the test found instead. The contributions, in the order they matter to a reader who wants to use them:
 
 1. **An 8-bit block index with a warp prefix-sum** (§5.4). 1.125 instead of 4 bytes per block, +2.25 points of compression, zero measurable cost on Pascal, Ampere and Ada. It dissolves the trade-off between block size and index overhead in a fixed-symbols-per-block design, and it costs 0.07–0.14 bits/weight against about 0.21 for DFloat11's per-thread gaps, with a single decode pass instead of two.
-2. **The negative result** (§5.2, §5.6). The ladder code is 0.86 points worse in rate and, once the decoder's memory access pattern is fixed, between tied and 1.36x slower than Huffman at every configuration one would run.
-3. **Where the decoder's time goes** (§5.3, §5.6). Coalescing the output write through shared memory is worth 1.9x on Pascal and 4.6x on Ada. A 16x collapse at large block sizes is an L2 effect that decays with L2 per resident thread. After both fixes the decoder's time follows SM clock, not bandwidth.
-4. **The rate floor, measured exactly** (§5.5). Neighbouring exponents are independent; exponent and mantissa of the same weight share 0.040 bits; the field split gives away 0.076 bits/weight against a full-alphabet code.
+2. **The negative result** (§5.2, §5.6). The ladder code is 0.86 points worse in rate and, once the decoder's memory access pattern is fixed, never meaningfully faster: at the operating point, each codec at its best thread count, it takes 0.98x (Ampere), 1.05x (Pascal) and 1.1x (Ada) Huffman's time, and at every block size's fastest Huffman configuration it is 1.04–1.58x slower.
+3. **Where the decoder's time goes** (§5.3, §5.6). Coalescing the output write through shared memory is worth 1.9x on Pascal and 4.6x on Ada (measured on the ladder kernel). A 16x collapse at large block sizes is an L2 effect that decays with L2 per resident thread. After both fixes the decoder's time falls roughly with SM clock, not bandwidth.
+4. **The rate floor, measured exactly** (§5.5). Neighbouring exponents are nearly independent (at most 0.017 bits of mutual information); exponent and mantissa of the same weight share 0.040 bits; the field split gives away 0.076 bits/weight against a full-alphabet code.
 
 All predictions were written down before the measurements that tested them and are kept in the repository as written. The ones that failed are reported as failures.
 
@@ -37,9 +37,9 @@ Variable-length codes destroy random access. The remedy used here is a coarse in
 
 DFloat11 solves the same problem from the other side (from its published kernel, `decode.cu`): each thread owns a fixed 8 bytes of compressed stream and a 5-bit "gap" says how many bits to skip to the first whole codeword — about 0.21 bits/weight of index on this data. Symbols per thread then vary, so the kernel decodes twice: a counting pass and a block-wide prefix-sum in shared memory give each thread its output position, then the real pass writes BF16 values, sign and mantissa already merged, through shared memory in coalesced form. Fixed symbols with an input-side prefix-sum, or fixed bits with an output-side one: the two designs are the two corners of the same trade-off.
 
-**The ladder code.** Read ones until the first zero; the count selects a rung; read that rung's index bits into a small table. With rungs (1, 1, 1, 2): lengths 2, 3, 4, 6 for the 10 most frequent symbols, and a 12-bit escape (`1111` + raw exponent) for the rest. Kraft's sum is exactly 1; the code is complete. The shape is fixed, so only 10 symbol bytes change between models. Decoding is `__clz(~w)`, a four-way branch, a shift and a mask.
+**The ladder code.** Read ones until the first zero; the count selects a rung; read that rung's index bits into a small table. With rungs (1, 1, 1, 2): lengths 2, 3, 4, 6 for the 10 most frequent symbols, and a 12-bit escape (`1111` + raw exponent) for the rest. Kraft's sum over all 256 exponents (every raw value has an escape code) is exactly 1, so the code is complete; over the 43 exponents that occur it is 0.9456. The shape is fixed, so only 10 symbol bytes change between models. Decoding is `__clz(~w)`, a four-way branch, a shift and a mask.
 
-**Related work.** DFloat11 [1] (NeurIPS 2025) is the direct reference. In June 2026, Tan et al. [2] (ISCA 2026) reported up to 11x its throughput by coding the whole 16-bit symbol with rANS and fusing decompression into the GEMM, so decompressed tiles never touch global memory. Its only stated objection to Huffman is the rate gap from integer-length codes; it does not claim — and it would be wrong to claim — that Huffman cannot do tile-granular random access. Its tiles get random access the way blocks do here: independent streams plus an offset table. §6 returns to [2].
+**Related work.** DFloat11 [1] (NeurIPS 2025) is the direct reference. In June 2026, Tan et al. [2] (ISCA 2026) reported about 6–7x its throughput (peak 6.9x, on single-layer GEMMs on an H200; up to 11x over NeuZip) by coding the whole 16-bit symbol with rANS and fusing decompression into the GEMM, so decompressed tiles never touch global memory. Its only stated objection to Huffman is the rate gap from integer-length codes; it does not claim — and it would be wrong to claim — that Huffman cannot do tile-granular random access. Its tiles get random access the way blocks do here: independent streams plus an offset table. §6 returns to [2].
 
 ## 3. Hypothesis, and predictions recorded before measurement
 
@@ -63,7 +63,7 @@ Qwen/Qwen3-0.6B [6], `model.safetensors` (SHA-256 `f47f7117…6874b`), all tenso
 
 Two samples are used besides the whole model:
 
-- a random 2M weights, with replacement, for the CPU bit-exact roundtrip of each codec (tables always come from the whole-model histogram; a prefix code is memoryless per symbol, so the sample exercises every code path including the escape);
+- a random 2M weights, with replacement, for the CPU bit-exact roundtrip of each codec (tables always come from the whole-model histogram; a prefix code is memoryless per symbol, so the sample tests every codeword it contains, including the escape; it held 31 of the 43 exponents present, and the harness now appends one of each so that a re-run covers all 43);
 - the **first 64M weights** for every GPU measurement.
 
 The 64M lie inside the embedding matrix, which compresses slightly better than the model average (exponent entropy 2.552 vs 2.645 bits). Compression figures from GPU runs are therefore sample figures and the whole-model projection is given alongside. Timing conclusions do not depend on the distribution.
@@ -76,8 +76,10 @@ The 64M lie inside the embedding matrix, which compresses slightly better than t
 | SMs / L2 | 6 / 1 MiB | 108 / 40 MiB | 128 / 72 MiB |
 | **L2 per resident thread** | **85 B** | **190 B** | **384 B** |
 | peak bandwidth | 112 GB/s | 2039 GB/s | 1008 GB/s |
-| SM clock during runs | 139–1923 MHz, unlocked (Windows) | 1140 MHz | 2520 MHz |
+| SM clock, sampled | 1695–1708 MHz | 1410 MHz | 2715–2760 MHz |
 | where | author's PC | rented container | rented container |
+
+Clocks are those the base-kernel sweep recorded around each measurement (for the 1050 Ti, in the replication run); the other harnesses do not record them. No card had its clocks locked.
 
 The design was developed on the 1050 Ti. The two rented cards ran identical code and sample, unattended, after the predictions of §5.6 were recorded. Nsight Compute does not support Pascal and its counters were blocked in both containers: occupancy, stalls and divergence are unmeasured on every card.
 
@@ -85,9 +87,9 @@ Software: Python 3.12, NumPy 2.5.3, CuPy 14.2.0, CUDA 12.9; kernels are CUDA C c
 
 ### 4.3 Protocol
 
-**Correctness before timing.** The vectorised encoder is verified byte-for-byte against the reference bit writer. Every kernel is verified bit-exact against the source exponents — 32M symbols, all 20 `BLOCK` × threads combinations — before any timing; the setup scripts refuse to proceed otherwise, and each benchmark harness re-checks every configuration it times. Every row reported here verified.
+**Correctness before timing.** The vectorised encoder is verified byte-for-byte against the reference bit writer. The setup scripts decode 32M symbols with both base kernels at `BLOCK=256` and stop unless both are bit-exact. The attribution, head-to-head and index harnesses check every configuration they time against the source exponents on the 64M sample, before timing (the attribution harness checks its base-kernel row right after); its 5 × 4 sweep covers all 20 `BLOCK` × threads combinations of the ladder base kernel. Every such row in the committed logs passed. The base-kernel sweep of §5.2 has no check of its own.
 
-**Timing.** CUDA events around one launch; 0.6 s of warm-up per configuration; 11 repetitions, median reported, IQR published beside it; configuration order shuffled with a fixed seed; SM clock sampled around each measurement. IQR was 0–3 ms on the unlocked 1050 Ti and 0 on every row of the rented cards. A full re-run on the 1050 Ti reproduced every ratio and conclusion, absolute times moving 1–6%.
+**Timing.** CUDA events around one launch; 0.6 s of warm-up per configuration; 11 repetitions, median reported; configuration order shuffled with a fixed seed; SM clock sampled around each measurement. Only the base-kernel sweep records the IQR: at most 6.2% of the median on the unlocked 1050 Ti (replication), 2.0% on the A100 and 1.0% on the 4090. A full re-run on the 1050 Ti reproduced every ratio and conclusion, absolute times moving 1–6%.
 
 **The memory-floor kernel** reads exactly the words each decoder thread would read and writes the same bytes, but does no decoding. It is a ceiling for *that access pattern*, not for the hardware.
 
@@ -128,12 +130,12 @@ At `BLOCK≥128` the ladder wins by up to 33%, the compute-bound regime the hypo
 Three caveats bound this:
 
 - "Memory-bound" here means bound by a bad access pattern. The best configuration reaches 9 GB/s, 8% of peak.
-- Output dominates. Of 88.7 MB moved at `BLOCK=64`, 64 MB (71%) is the one-byte-per-symbol output; the entropy code can touch at most 23% of the traffic.
+- Output dominates. Of 88.7 MB moved at `BLOCK=64`, 64 MB (72%) is the one-byte-per-symbol output; the entropy code can touch at most 23% of the traffic.
 - The collapse between `BLOCK=128` and `256` coincides with the resident working set (520 → 1040 KiB) crossing the 1 MiB L2. Recorded as consistent, not proven; it became the prediction of §5.6.
 
 ### 5.3 Attribution: input versus output
 
-Each thread walks its own bit region, so a warp reads 32 scattered streams. Each thread writes `BLOCK` consecutive bytes, so a warp's 32 stores hit 32 distinct sectors. Both have the same fix: the threads of one CUDA block own a contiguous range, so stage it through shared memory and move it coalesced. Four variants were compiled so the gain could be attributed rather than guessed. `BLOCK=64`, 128 threads:
+Each thread walks its own bit region, so a warp reads 32 scattered streams. Each thread writes `BLOCK` consecutive bytes, so a warp's 32 stores hit 32 distinct sectors. Both have the same fix: the threads of one CUDA block own a contiguous range, so stage it through shared memory and move it coalesced. Four variants were compiled so the gain could be attributed rather than guessed. The attribution harness times the ladder kernel. `BLOCK=64`, 128 threads, time of the base ladder kernel over each variant's:
 
 | variant | 1050 Ti | A100 | 4090 |
 |---|---|---|---|
@@ -146,9 +148,9 @@ Coalescing the output nearly doubles throughput on Pascal and is worth 4.6x on A
 
 Combining the two is *worse* than output alone on Pascal — the input staging spends shared memory and a barrier, buys nothing, and pays in occupancy — but is the best variant on Ampere and Ada. The Pascal lesson did not transfer; it is recorded as architecture-specific.
 
-At `BLOCK=256` on Pascal the picture inverts: input staging is worth 4.4x, because the input no longer fits in L2. Same block size as the collapse in §5.2 — the second line of evidence for the L2 explanation.
+At `BLOCK=256` on Pascal the picture inverts: input staging is worth 4.4x (ladder kernel), because the input no longer fits in L2. Same block size as the collapse in §5.2 — the second line of evidence for the L2 explanation.
 
-With the optimised kernel the comparison was redone, not extrapolated. Best on the 1050 Ti: Huffman, `BLOCK=64`, 128 threads, output staged, **4.80 ms** — 2.02x faster than §5.2 — with the ladder at 5.07 ms (1.055x). The ladder now loses on both axes, in the regime where compute weighs more. One shared-memory lookup beats a dependent `clz`/branch/shift/mask chain.
+With the optimised kernel the comparison was redone, not extrapolated. Best on the 1050 Ti: Huffman, `BLOCK=64`, 128 threads, output staged, **4.80 ms** — 2.02x faster than §5.2 — with the ladder at 5.07 ms (1.055x). These two times come from an interactive run whose output was not saved; the committed replication gives 4.85 and 5.11 ms (1.054x). The ladder now loses on both axes, in the regime where compute weighs more. One shared-memory lookup beats a dependent `clz`/branch/shift/mask chain.
 
 ### 5.4 The 8-bit block index
 
@@ -165,13 +167,15 @@ Total **1.125 B/block**. Each thread recovers its block's offset as the superblo
 
 | | 1050 Ti | A100 | 4090 | compression (sample) |
 |---|---|---|---|---|
-| uint32 index | 4.81 ms | 0.47 ms | 0.19 ms | 30.73% |
-| **8-bit index + prefix-sum** | 4.82 ms | 0.47 ms | 0.19 ms | **32.97%** |
-| time ratio | 1.00x | 1.006x | 0.996x | **+2.25 pts** |
+| uint32 index | 4.81 ms\* | 0.47 ms | 0.19 ms | 30.73% |
+| **8-bit index + prefix-sum** | 4.82 ms\* | 0.47 ms | 0.19 ms | **32.97%** |
+| time, 8-bit / uint32 | 1.00x\* | 0.994x | 1.004x | **+2.25 pts** |
+
+\* From an interactive run whose output was not saved. The committed replication on the same card gives 5.11 ms (uint32) and 4.85 ms (8-bit), 0.95x; the 8-bit index is not slower in either run. A100 and 4090 columns from `4_bench_idx8.txt`, whose printed ratio is the inverse of this row.
 
 Five shuffles are invisible next to a chain of 64 dependent loads. Index traffic falls from 4 MB to 1.1 MB.
 
-**What it changes.** The reason to want large blocks was index overhead: at `BLOCK=64` a uint32 index costs 0.5 bits per weight, at `BLOCK=1024` 0.03. Large blocks were 16x slower on Pascal (§5.2) and, as §5.6 shows, 3–6x slower even on cards with no L2 cliff. The 8-bit index removes the dilemma. The whole-model rate at the fast configuration rises from 30.14% to 32.39%, within 0.68 points of the best any block size reaches, and there is no configuration on any of the three cards where a larger block is the right choice.
+**What it changes.** The reason to want large blocks was index overhead: at `BLOCK=64` a uint32 index costs 0.5 bits per weight, at `BLOCK=1024` 0.03. Large blocks were 16x slower on Pascal (§5.2) and, as §5.6 shows, 2–6x slower even on cards with no L2 cliff. The 8-bit index removes the dilemma. The whole-model rate at the fast configuration rises from 30.14% to 32.39%, within 0.68 points of the best any block size reaches, and there is no configuration on any of the three cards where a larger block is the right choice.
 
 **Against DFloat11's index.** DFloat11's 5-bit gaps cost about 0.21 bits/weight on this data and require a counting pass before the decoding pass; the 8-bit scheme costs 0.14 (BLOCK=64) or 0.07 (BLOCK=128) and decodes once. Whether the single pass is faster than DFloat11's two passes was not measured, since their kernel was not run here. Nothing about the scheme depends on the entropy code; it applies to any fixed-symbols-per-block stream whose block lengths have bounded spread.
 
@@ -179,7 +183,7 @@ Against the starting point on the same card (9.70 ms, 30.73%), the reference dec
 
 ### 5.5 The rate floor of the field split
 
-**Between neighbouring exponents there is nothing to exploit.** Mutual information between adjacent exponents, in six 32M-symbol windows across the file: at most 0.010 bits, typically 0.0002. An order-1 context model gains 0.0000 bits/symbol. Huffman over pairs recovers 0.016 bits/symbol (0.1% of the file) for an 8 KiB table; the ladder over pairs is worse than the scalar ladder even with a 25x larger table.
+**Between neighbouring exponents there is little to exploit.** Mutual information between adjacent exponents, in six 32M-symbol windows across the file: from 0.0002 bits (the embedding matrix) to 0.017 bits, 51% of the scalar Huffman redundancy (0.033) and 0.1% of the file; that is the most order-1 context coding could remove. An order-1 context model on the first 64M symbols gains 0.0000 bits/symbol. Huffman over pairs recovers 0.016 bits/symbol (0.1% of the file) for an 8 KiB table; the ladder over pairs is worse than the scalar ladder even with a 25x larger table.
 
 **Between the fields of one weight there is a little.** Joint entropy is subadditive, so a coder over the whole 16-bit symbol — as in [2] — can never do worse than the field split, and does better by exactly the mutual information between fields. Measured exactly on all 596M unique weights (7,506 of the 65,536 possible values occur):
 
@@ -191,7 +195,7 @@ Against the starting point on the same card (9.70 ms, 30.73%), the reference dec
 | I(exp; mant) | **0.040** |
 | I(sign; exp), I(sign; mant) | 0.0001, 0.0000 |
 
-The dependence is concentrated. Conditional mantissa entropy is 7.00 bits for every exponent except the two largest binades, 122 and 123 (21% and 3.5% of the mass), where it falls to 6.84 and 6.26 bits: the Gaussian tail decays *within* the top binade, so small mantissas are more likely there.
+The dependence is concentrated. Conditional mantissa entropy is 7.00 bits below the mode and 6.98 at exponent 121 (29% of the mass). It falls clearly only in the two largest binades, 122 and 123 (21% and 3.5% of the mass), to 6.84 and 6.26 bits: the Gaussian tail decays *within* the top binade, so small mantissas are more likely there. Those two binades hold about 90% of the mantissa's shortfall from 7 bits.
 
 **What canonical Huffman achieves on each alphabet**, no index:
 
@@ -221,31 +225,31 @@ Base kernel, Huffman, 128 threads:
 
 **The cliff prediction held.** What remains is not L2: the floor kernel rises the same way, and at `BLOCK=1024` there are only 62,500 threads for 221,184 (A100) or 196,608 (4090) resident slots.
 
-**The input-staging prediction failed, informatively.** Its gain at `BLOCK=256` is 4.4x, 2.0x and 1.2x on the three cards. It does not switch off when the data fits in L2; it decays with L2 per resident thread, because 32 scattered streams per warp are served more slowly from L2 than one contiguous load. L2 per thread predicts the *size* of the effect, not its presence.
+**The input-staging prediction failed, informatively.** Its gain at `BLOCK=256` (ladder kernel) is 4.4x, 2.1x and 1.2x on the three cards. It does not switch off when the data fits in L2; it decays with L2 per resident thread, because 32 scattered streams per warp are served more slowly from L2 than one contiguous load. L2 per thread predicts the *size* of the effect, not its presence.
 
 **"Large BLOCK becomes viable" is moot.** With the optimised kernel, `BLOCK=1024` is 3.5x (A100) and 6x (4090) slower than `BLOCK=64`: the serial chain is 16x longer and nothing hides it. And §5.4 removed the reason to want it.
 
-**Beyond the prediction.** Best Huffman time for 64M symbols: 0.44 ms on the A100, 0.20 ms on the 4090. The 4090 is 2.2x faster with half the bandwidth, and its SM clock is 2.2x higher (2520 vs 1140 MHz). The base kernel shows no such effect (1.26 vs 1.24 ms: latency-bound on the scattered pattern). Achieved bandwidth at the best configuration is 16%, 10% and 45% of peak. Two cards do not prove it, but the reading most consistent with the data is that once the access pattern is fixed, the decoder is bound by the latency of its 64-step chain of dependent loads, which runs at SM clock.
+**Beyond the prediction.** Best Huffman time for 64M symbols (uint32 index): 0.44 ms on the A100, 0.20 ms on the 4090. The 4090 is 2.2x faster with half the bandwidth, and its SM clock, as sampled during the base-kernel sweep of the same runs, is 1.93–1.96x higher (2715–2760 vs 1410 MHz): time falls roughly with SM clock, not exactly. The base kernel shows no such effect (1.26 vs 1.24 ms: latency-bound on the scattered pattern). Achieved bandwidth at the best configuration is 16%, 10% and 45% of peak. Two cards do not prove it, but the reading most consistent with the data is that once the access pattern is fixed, the decoder is bound by the latency of its 64-step chain of dependent loads, which runs at SM clock.
 
-The ladder-to-Huffman time ratio at the operating point is 1.05, ~1.0 and 1.3 on the three cards. On no card does the ladder win where it would be run.
+At the operating point (`BLOCK=64`), each codec at its best thread count, the ladder takes 1.05x, 0.98x and 1.1x Huffman's time on the three cards; at Huffman's best thread count, 1.05x, 1.08x and 1.36x. The ladder's only edge, 2% on the A100, is a tie at the logs' 0.01 ms resolution (0.43 vs 0.44 ms); on the other two cards the ladder is slower.
 
 ## 6. Discussion
 
-**What was learned.** The two structural changes were worth 2x in speed and 2.25 points. The entropy-code question the work was built on was worth 0.86 points, in the wrong direction. Entropy coding is finished *within the field split* — 0.033 bits from its floor, no neighbour correlation — and the split is now measured to cost 0.47 points, almost all in two binades. Everything else is structural: the access pattern, the index, the serial chain.
+**What was learned.** The two structural changes were worth 2x in speed and 2.25 points. The entropy-code question the work was built on was worth 0.86 points, in the wrong direction. Entropy coding is finished *within the field split* — 0.033 bits from its floor, almost no neighbour correlation — and the split is now measured to cost 0.47 points, almost all in two binades. Everything else is structural: the access pattern, the index, the serial chain.
 
-**Relation to fused decompression [2].** The 11x gain over DFloat11 in [2] is attributed by its authors to fusion — no global-memory materialisation of the decompressed layer, decompression overlapped with tensor-core work — not to rANS over Huffman. On this data the Shannon-gap argument for rANS is weak: Huffman is at 98.8% efficiency on the exponent alphabet.
+**Relation to fused decompression [2].** [2] reports about 6–7x DFloat11's throughput and describes fusion — no global-memory materialisation of the decompressed layer, decompression overlapped with tensor-core work — as essential to it. It does not separate the contribution of rANS from that of fusion; reading the gain as mostly structural is ours. On this data the Shannon-gap argument for rANS is weak: Huffman is at 98.8% efficiency on the exponent alphabet.
 
-The measurements here corroborate the structural reading from the other side. After every fix found here the standalone decoder is at 10–45% of peak bandwidth, its time follows SM clock, and its output — one byte per weight, then a second pass to merge sign and mantissa — is the majority of its traffic. Those are the costs fusion removes. The implication is to keep canonical Huffman and fuse. The interleaved-stream layout of [2], which obtains coalescing in the format rather than the kernel, maps onto §5.3. DFloat11's kernel already stages and merges its output as §5.3 recommends; the corresponding step here (§7 of the repository's handoff) is still to do.
+The measurements here corroborate the structural reading from the other side. After every fix found here the standalone decoder is at 10–45% of peak bandwidth, its time falls roughly with SM clock, and its output — one byte per weight, then a second pass to merge sign and mantissa — is the majority of its traffic. Those are the costs fusion removes. The implication is to keep canonical Huffman and fuse. The interleaved-stream layout of [2], which obtains coalescing in the format rather than the kernel, maps onto §5.3. DFloat11's kernel already stages and merges its output as §5.3 recommends; the corresponding step here (§4.3 of the repository's `HANDOFF.md`) is still to do.
 
 **Why lossy formats avoid entropy codes.** Huffman coding of weights is old [3], but it targeted storage; GGUF, GPTQ, AWQ and NF4, which target inference, are fixed-width. The reason is not that Huffman is slow; it is that variable-length codes force a decompress-to-memory round trip instead of in-register dequantisation inside the GEMM. Losslessness closes the fixed-rate corner, so the index is not avoidable; making the decoder never touch DRAM is the reachable goal.
 
-**Threats to validity.** One model, and a small one. One card per architecture, in rented containers whose clocks could not be locked (IQRs were zero). The GPU sample is the embedding matrix; both figures are given. No comparison against DFloat11's shipped kernel — every "Huffman" number is this repository's implementation of the same field split, and DFloat11's two-pass, fixed-bytes-per-thread kernel is a different design whose speed relative to this one is unknown. No end-to-end tokens-per-second. No profiler data on any card. One unexplained anomaly on Pascal (Huffman 2–2.4x faster than the ladder at `BLOCK=128` with input staged) is off the optimal path, reproduces, and is recorded rather than explained. The full list is in `METHODOLOGY.md`.
+**Threats to validity.** One model, and a small one. One card per architecture, in rented containers whose clocks could not be locked (IQRs of the base-kernel sweep at most 2% of the median). The GPU sample is the embedding matrix; both figures are given. No comparison against DFloat11's shipped kernel — every "Huffman" number is this repository's implementation of the same field split, and DFloat11's two-pass, fixed-bytes-per-thread kernel is a different design whose speed relative to this one is unknown. No end-to-end tokens-per-second. No profiler data on any card. One unexplained anomaly on Pascal (Huffman 2–2.4x faster than the ladder at `BLOCK=128` with input staged) is off the optimal path, reproduces, and is recorded rather than explained. The full list is in `METHODOLOGY.md`.
 
 ## 7. Conclusion
 
 A table-free prefix code does not decode BF16 exponents faster than canonical Huffman on a GPU — on Pascal, Ampere or Ada — and costs 0.86 points of compression. The question that motivated the work has a clear negative answer.
 
-The decoder's time was never in the entropy code. It was in an access pattern that scattered each warp's loads and stores; in an index four times larger than it needed to be; and, once those are fixed, in the serial chain of dependent loads inside each block, which runs at SM clock and which only fusion with the consumer of the weights can hide.
+The decoder's time was never in the entropy code. It was in an access pattern that scattered each warp's loads and stores; in an index 3.6 times larger than it needed to be; and, once those are fixed, in the serial chain of dependent loads inside each block, which runs at SM clock and which only fusion with the consumer of the weights can hide.
 
 Of the three, the index is the result that travels. Eight-bit block lengths and a warp prefix-sum cost five shuffles per thread, save 2.9 bytes per block against a uint32 index and about a third against DFloat11's gaps, and remove the reason to trade block size against compression. Any fixed-symbols-per-block stream can use it.
 
@@ -253,9 +257,21 @@ Canonical Huffman on the exponent is 0.033 bits from its floor, and the field sp
 
 ## Reproducibility and authorship
 
-The repository contains the code; setup scripts that download the model and refuse to proceed unless the kernels verify bit-exact; raw logs and environment records for all four machines under `results/`; and `METHODOLOGY.md`, covering data provenance, per-experiment samples, protocols and threats to validity. Every table in this report is transcribed from a committed log. The two rented GPU runs cost about 1.7 USD in total and can be repeated by following `RENT_A_GPU.md`.
+The repository contains the code; setup scripts that download the model and refuse to proceed unless the kernels verify bit-exact; raw logs and environment records for all four machines under `results/`; and `METHODOLOGY.md`, covering data provenance, per-experiment samples, protocols and threats to validity. Every table in this report comes from a committed log, except the 1050 Ti figures of §5.3 and §5.4 marked as coming from an unsaved run; the committed replication on the same card is given beside them. The two rented GPU runs cost about 1.7 USD in total and can be repeated by following `RENT_A_GPU.md`.
 
 Claude Code (Anthropic) was used extensively — to implement the codecs, kernels and harnesses, to run and interpret the CPU analysis, to review the literature, to drive the rented GPU runs, and to draft and revise the documentation and this report — under the author's direction. It was also used to audit the repository against its own evidence before publication; that audit found and corrected a duplicated tensor in the whole-model figures and a literature claim that a paper summary asserted and the paper does not. Every commit carries a `Co-Authored-By` trailer and a session link. The hypothesis, the decisions about what to measure and what to conclude, and any remaining errors are the author's.
+
+## Corrections
+
+**2026-09-26**, after an independent review of the repository against its own data. Changed since the version first released:
+
+- SM clocks: the A100 and RTX 4090 values were a single read taken before warm-up (1140 and 2520 MHz). The clocks sampled during timing are 1410 and 2715–2760 MHz (1695–1708 MHz on the 1050 Ti), a ratio of 1.93–1.96x against a 2.2x time ratio; "time follows SM clock" is now "falls roughly with SM clock".
+- IQR: "0 on every row" was a whole-millisecond print. Relative IQRs are now given, and only the base-kernel sweep records one.
+- Ladder against Huffman: the comparison is defined (best against best, or at Huffman's best configuration). On the 4090 the best-against-best ratio is 1.1x, not 1.3x, and the A100 is a tie at 0.98x.
+- The 1050 Ti figures from the unsaved run (§5.3, §5.4) are marked, with the committed replication beside them, and the abstract no longer says that every number traces to a committed log. The index time-ratio row now has one direction on every card.
+- Neighbour mutual information re-measured on the deduplicated file, with a committed log: up to 0.017 bits, not 0.010.
+- Tan et al. [2]: about 6–7x DFloat11's throughput (peak 6.9x), not 11x, which is against NeuZip; that rANS is not the source of the gain is our reading, not theirs.
+- Smaller fixes: output share of traffic 72% (was 71%); A100 input-staging gain 2.1x (was 2.0x); large blocks 2–6x slower (was 3–6x); the index was 3.6 times larger (was "four times"); the correctness protocol states what each harness checks, and the CPU roundtrip sample's coverage (31 of 43 exponents) is stated; attribution results are labelled as ladder-kernel measurements; the conditional mantissa entropy of exponent 121 and the Kraft sum over occurring exponents are stated; the hypothesis was recorded before any GPU was available, not before any measurement.
 
 ## References
 

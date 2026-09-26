@@ -21,7 +21,7 @@ from the HANDOFF are met.
 | Step | Criterion | Result |
 |---|---|---|
 | 2. Exponent entropy | between 2.4 and 3.0 bits | **2.645 bits** ✓ |
-| 3. Canonical Huffman (`df11_reference.py`) | >=28% saving, exact roundtrip | **32.48%** saving, bit-exact roundtrip **YES** ✓ |
+| 3. Canonical Huffman (`df11_reference.py` codec, measured by `bench.py`) | >=28% saving, exact roundtrip | **32.48%** saving, bit-exact roundtrip **YES** ✓ |
 | 4. Reassign ladder to the real distribution | — | done, 43 distinct symbols (vs 25 synthetic) |
 | 5. Ladder codec | exact roundtrip, <1 point from Huffman | roundtrip **YES**, gap = **0.86 points** ✓ |
 
@@ -66,9 +66,13 @@ sequence per thread/warp).
 - **Bit-exact roundtrip**: verified on a **random sample of 2,000,000 symbols**
   (with replacement, `outputs/real_weights_bf16.bin` via `np.memmap` to avoid
   loading 1.2 GB into RAM), using the code table derived from the **complete**
-  distribution. A prefix code is memoryless per symbol, so this proves codec
-  correctness just as well as encoding the entire file — the sample hit the
-  escape path 10,165 times, so that branch is covered too.
+  distribution. A prefix code is memoryless per symbol, so this tests every
+  codeword the sample contains — the sample hit the escape path 10,165
+  times, so that branch is covered too. In the committed run
+  (`results/cpu/bench_log.txt`) the sample contained 31 of the 43 exponents
+  present; `bench.py` now also appends one occurrence of every present
+  symbol, so a re-run covers all 43 (and prints two extra lines; the
+  committed log predates this).
 - `real_exp_counts.npy` stores the exact counts for all 596.0M weights so the
   `.safetensors` (1.4 GB) does not have to be re-read on later runs.
 
@@ -96,9 +100,9 @@ github.com/LeanModels/DFloat11, which does ship kernels).
 
 | File | What it is |
 |---|---|
-| `ladder_codec.py` | Generic ladder codec (any `rung_bits`), with real bitstream encode/decode and Kraft verification. Includes a self-test. |
+| `ladder_codec.py` | Generic ladder codec (any `rung_bits`), with real bitstream encode/decode; `build_ladder` asserts Kraft <= 1. Includes a self-test. |
 | `bench.py` | Test harness: Huffman vs ladder, synthetic and real, shape and `BLOCK` sweeps, sampled roundtrip. Produces `outputs/bench_results.json`. |
-| `outputs/real_weights_bf16.bin` | 596,049,920 raw BF16 weights extracted from Qwen3-0.6B (all tensors, duplicate `lm_head` dropped, 1.2 GB). |
+| `outputs/real_weights_bf16.bin` | 596,049,920 raw BF16 weights extracted from Qwen3-0.6B (all tensors, duplicate tied embedding dropped, 1.2 GB). |
 | `outputs/real_exp_counts.npy` | Exact per-exponent counts (256,) for the above file. |
 | `outputs/bench_results.json` | Complete numeric results from `bench.py`. Committed copy: `results/cpu/`. |
 | `outputs/bench_log.txt` | Console log of the last `bench.py` run. Committed copy: `results/cpu/`, with the extractor log and `env_info.json`. |
@@ -111,6 +115,11 @@ github.com/LeanModels/DFloat11, which does ship kernels).
 Run on an **NVIDIA GeForce GTX 1050 Ti** (Pascal, SM 6.1, 6 SMs, 4 GB, 1 MiB
 L2, theoretical peak 112.1 GB/s), over the same real Qwen3-0.6B weights
 (sample of 64,000,000 exponents).
+
+> The GTX 1050 Ti tables in Phases 2, 2b and 2c were transcribed from
+> interactive runs whose console output was not saved. The committed evidence
+> is a full replication on the same card (`results/gtx1050ti/`), compared
+> number by number in METHODOLOGY.md section 10.
 
 ## What was implemented
 
@@ -137,12 +146,17 @@ Resource usage (from `kernel.attributes`):
 - **Memory floor kernel (`mem_floor`)**: moves exactly the same traffic (reads
   the same bitstream words, writes the same bytes) but **does not decode**. It
   is an empirical performance ceiling: getting close to it means memory
-  dominates and the entropy code is irrelevant.
+  dominates and the entropy code is irrelevant. In these runs and in every
+  committed `gpu_bench.json` the floor was run on the ladder stream only, and
+  h/floor divides by it; `bench_gpu.py` now runs a floor on each codec's own
+  stream and prints them as "floor h" and "floor l".
 - This GPU **does not allow locking clocks** (consumer under WDDM, and it also
-  drives the desktop: it swings between 139 and 1923 MHz). Compensated with
-  sustained warm-up per configuration, clock sampling, randomized configuration
-  order and the median of 11 repetitions. With the desktop cleared the IQR
-  stays at 0-3 ms.
+  drives the desktop; maximum 1923 MHz per `gpu_info.txt`, 1695–1708 MHz
+  sampled during timing in the replication). Compensated with sustained
+  warm-up per configuration, clock sampling, randomized configuration order
+  and the median of 11 repetitions. With the desktop cleared the printed IQR
+  (rounded to whole ms) stays at 0-3 ms; the replication's `gpu_bench.json`
+  gives at most 6.2% of the median (median 0.8%).
 - The block index is **uint32**, as the format spec says.
 
 ## Results (64M symbols, median of 11)
@@ -165,8 +179,9 @@ There are two regimes and they point in opposite directions:
 - **BLOCK=64 is the fastest configuration, by 3-16x.** There both decoders are
   within **1-2% of the memory floor** and within **0.3-0.9% of each other**.
   The entropy code is irrelevant. Worse: the ladder is systematically the
-  **slower** one (1.003-1.009x), which is exactly what you would expect — in a
-  memory-bound regime its 4.8% larger bitstream costs time and buys nothing.
+  **slower** one (1.005–1.012x across 64–256 threads in the committed
+  replication; the original run's per-thread values were not saved), which
+  is exactly what you would expect — in a memory-bound regime its 4.8% larger bitstream costs time and buys nothing.
 - **BLOCK>=128** the ladder wins by 5-32%, confirming the compute-bound
   hypothesis... but **all those configurations are 3-13x slower in absolute
   terms**. Nobody would use them.
@@ -187,7 +202,7 @@ decoding, vectorized loads). That prize is far larger than the 0.86 points
 separating the two codes.
 
 **2. Output dominates the traffic.** At BLOCK=64, 88.7 MB moves, of which
-**64 MB (72%) is the exponent output**. The two bitstreams differ by less than
+**64 MB (72%) is the exponent output**. The two bitstreams differ by about
 1 MB. Structurally the entropy code can only influence ~23% of the traffic, and
 fusing the sign+mantissa merge to emit BF16 directly would shrink that fraction
 further. That is why the two codecs converge, and this is **not** specific to
@@ -245,7 +260,10 @@ This phase attacks the layout.
 **4 variants** (input x output) were compiled so the improvement could be
 attributed rather than guessed. All verified bit-exactly.
 
-## Result (BLOCK=64, 128 threads, 64M symbols)
+## Result (ladder kernel, BLOCK=64, 128 threads, 64M symbols)
+
+`bench_opt.py` times only the ladder kernel; the Huffman kernel with the same
+staging is compared in the head-to-head below.
 
 | variant | shared | ms | GB/s | vs base |
 |---|---|---|---|---|
@@ -263,7 +281,7 @@ that is paid for in occupancy. Combining optimizations made it worse.
 
 ## At BLOCK=256 it inverts — and that confirms the L2 story
 
-| BLOCK=256, 64 threads | ms | vs base |
+| ladder kernel, BLOCK=256, 64 threads | ms | vs base |
 |---|---|---|
 | base | 57.14 | 1.00 |
 | **smem input** | **13.05** | **4.38x** |
@@ -307,7 +325,9 @@ means the comparison must be **redone**, not extrapolated.
 
 The optimization **reinforces** Phase 2's conclusion rather than overturning
 it. The ladder now loses on **both axes**: 0.86 points worse compression *and*
-5% to 43% slower. Before, it at least won in the compute-bound regime.
+5% to 43% slower at each BLOCK's fastest Huffman configuration (at 64
+threads, BLOCK=64, it is 3% faster, but that row is slower than Huffman's
+best). Before, it at least won in the compute-bound regime.
 
 And this is the regime where it should have won: at 16.5% of peak, compute
 weighs more than before, and it still loses. The doubt the HANDOFF itself
@@ -370,22 +390,28 @@ arithmetic, ANS — can beat that bound if the symbols are independent.
 **(b) Correlation between neighbouring exponents.** This is **not** bounded by
 (a): it would be new headroom. And it is an empirical question.
 
-Measured over six windows spread across the whole model (not just the first 64M
-weights, which are the embedding matrix and could mislead; offsets refer to
-the file as extracted before the duplicate `lm_head` was dropped):
+Measured over six 32M-symbol windows spread across the whole model (not just
+the first 64M weights, which are the embedding matrix and could mislead;
+offsets into the deduplicated file, log in `results/cpu/analysis_index.txt`):
 
 | offset | H(X) | H(Y given X) | I(X;Y) |
 |---|---|---|---|
 | 0 | 2.5494 | 2.5491 | 0.00024 |
-| 93,954,048 | 2.5591 | 2.5589 | 0.00026 |
-| 187,908,096 | 2.5545 | 2.5543 | 0.00020 |
-| 375,816,192 | 2.6535 | 2.6435 | 0.00998 |
-| 563,724,288 | 2.6493 | 2.6406 | 0.00870 |
-| 711,632,384 | 2.6436 | 2.6347 | 0.00884 |
+| 74,506,240 | 2.5560 | 2.5558 | 0.00020 |
+| 149,012,480 | 2.6966 | 2.6798 | 0.01681 |
+| 298,024,960 | 2.6648 | 2.6538 | 0.01107 |
+| 447,037,440 | 2.6708 | 2.6587 | 0.01210 |
+| 556,049,920 | 2.6436 | 2.6347 | 0.00884 |
 
-**Maximum mutual information: 0.00998 bits.** Neighbouring exponents are
-independent for practical purposes. Order-1 context modelling confirms it:
-**+0.0000 bits/symbol**.
+**Maximum mutual information: 0.01681 bits/symbol**, 51% of the scalar
+Huffman redundancy over the whole model (0.03267) and about 0.1% of the file.
+I(X;Y) bounds what order-1 context coding can remove from the entropy. An
+earlier version of this table, measured on the file with the duplicate kept (maximum 0.00998),
+had no saved log; the table above is the committed re-run of 2026-09-26.
+Neighbouring exponents are close to independent. Order-1 context modelling on
+the 64M timing sample, where I = 0.0002, gains **+0.0000 bits/symbol**
+(`results/cpu/analysis_vector.txt`); in the windows with more dependence it
+could gain at most their I(X;Y).
 
 So only (a) remains, and Huffman over pairs captures half of it: 2.5668 vs
 2.5832, i.e. 0.0164 bits/symbol — **0.1% of the total file**.
@@ -402,8 +428,8 @@ So only (a) remains, and Huffman over pairs captures half of it: 2.5668 vs
 
 The best ladder over pairs (2.7542) is **worse than the scalar ladder**
 (2.7089) with a 25x larger table. The rung geometry works because three symbols
-concentrate 69% of the mass; spreading over 421 observed pairs flattens the
-distribution and power-of-two rungs no longer follow it. Vector coding is
+concentrate 72% of the mass (whole model); spreading over 421 observed pairs
+flattens the distribution and power-of-two rungs no longer follow it. Vector coding is
 precisely the technique that inflates tables, which is the one thing the ladder
 exists to avoid.
 
@@ -453,8 +479,13 @@ model:
 
 | | fastest config | best compression |
 |---|---|---|
-| before | BLOCK=64 -> 30.14% | BLOCK=1024 -> 33.07%, but **32x slower** |
+| before | BLOCK=64 -> 30.14% | BLOCK=1024 -> 33.07%, but **16x slower** |
 | after | BLOCK=64 -> **32.39%** | BLOCK=1024 -> 33.07% |
+
+"16x slower" compares like with like: the base kernel at BLOCK=1024 against
+BLOCK=64 (153.77 vs 9.70 ms; 16.2x in the replication). With each block size
+at its fastest optimised Huffman variant the gap is 2.7x (13.01 vs 4.85 ms,
+`results/gtx1050ti/3_head2head.txt`).
 
 The distance between "fast" and "compresses well" goes from 2.93 points to
 0.68. There is no longer a choice to make.
@@ -469,7 +500,9 @@ the entropy code nor the decode loop.
 The 8-bit index **only reaches BLOCK=128**. At BLOCK=256 the block-length range
 is 409, above the 255 that fit in an 8-bit delta; the builder raises an
 exception rather than truncating silently. Larger blocks need the relative
-16-bit variant (2.016 B/block, +1.94 points at BLOCK=256).
+16-bit variant (2.016 B/block: +0.39 points at BLOCK=256 on the whole model,
+32.48% -> 32.87% with the METHODOLOGY section 6 formula,
+`results/cpu/analysis_index.txt`).
 
 ## Taken together
 
@@ -479,7 +512,8 @@ points, and in the wrong direction. The index and the memory layout mattered
 enormously more than Huffman-versus-ladder.
 
 Entropy coding is, for practical purposes, finished: Huffman lands 0.033 bits
-from the theoretical floor and there is no correlation to exploit. All
+from the theoretical floor and neighbouring exponents share at most 0.017 bits
+(51% of that redundancy, in the most dependent window). All
 remaining headroom is structural.
 
 ## Pending
@@ -554,10 +588,12 @@ for the exponents carrying most of the mass:
 | 123 | 3.5% | **6.255** |
 | 117 | 3.2% | 7.000 |
 
-The mantissa is uniform (7.00 bits) everywhere except in the two largest
+The mantissa is uniform (7.00 bits) below the mode and close to it at
+exponent 121 (6.981 bits); it falls clearly below 7 only in the two largest
 binades, 122 and 123, where the Gaussian tail decays *within* the binade and
-small mantissas are more likely. That is the entire 0.04 bits. Below the
-mode the mantissa carries no information about the exponent at all.
+small mantissas are more likely. Those two binades account for about 90% of
+the mantissa's shortfall from 7 bits; exponent 121, with 29% of the mass,
+for most of the rest.
 
 ## Achieved rates, and the exact decomposition
 
@@ -620,14 +656,18 @@ axis (`RENT_A_GPU.md`; ~1.7 USD in total).
 | SMs / L2 | 6 / 1 MiB | 108 / 40 MiB | 128 / 72 MiB |
 | **L2 per resident thread** | **85 B** | **190 B** | **384 B** |
 | peak bandwidth | 112 GB/s | 2039 GB/s | 1008 GB/s |
-| SM clock during the run | 139–1923 MHz, unlocked | 1140 MHz | 2520 MHz |
+| SM clock sampled during timing | 1695–1708 MHz (replication), unlocked | 1410 MHz | 2715–2760 MHz |
 | where | home PC, Windows | RunPod Secure Cloud container | RunPod Secure Cloud container |
 | clocks locked | no (WDDM) | no (no permission in container) | no (same) |
-| IQR over 11 repetitions | 0–3 ms | 0 | 0 |
+| IQR over 11 repetitions, largest | 6.2% of the median (replication) | 2.0% | 1.0% |
 | Nsight Compute | unsupported | blocked by host | blocked by host |
 
 Same code, same 64M-symbol sample, same tables, same `run_all.sh`. Logs and
-`env_info.json` in `results/a100sxm480gb/` and `results/rtx4090/`.
+`env_info.json` in `results/a100sxm480gb/` and `results/rtx4090/`. Clock and
+IQR come from `gpu_bench.json` (fields `mhz`, `iqr`), written by the
+base-kernel sweep `bench_gpu.py`; the other three harnesses record neither.
+`gpu_info.txt` holds a single read taken before warm-up (A100 1140 MHz, 4090
+2520 MHz), not the clock during timing.
 
 ## The predictions, one by one
 
@@ -650,7 +690,7 @@ under-occupancy of the card, and it would affect any one-thread-per-block
 decoder.
 
 **2. "Staging the input in shared should stop mattering at BLOCK=256."**
-Attribution run, 64 threads:
+Attribution run (ladder kernel), 64 threads:
 
 | input staged, BLOCK=256 | 1050 Ti | A100 | 4090 |
 |---|---|---|---|
@@ -674,9 +714,9 @@ staged), Huffman, best thread count per row:
 | 256 | 0.91 | 0.39 |
 | 1024 | 1.52 | 1.21 |
 
-**Moot rather than wrong.** Large BLOCK is 3–6x slower than BLOCK=64 on both
-cards even without a cliff, because the serial chain inside each block is
-16x longer and nothing hides it. The reason to want large BLOCK — index
+**Moot rather than wrong.** Large BLOCK is 2–6x slower than BLOCK=64 on both
+cards even without a cliff (about 2x at BLOCK=256, 3.5x and 6x at 1024),
+because the serial chain inside each block is 16x longer and nothing hides it. The reason to want large BLOCK — index
 overhead — was removed by the 8-bit index in Phase 2c, which gives BLOCK=64
 32.97% against 33.07% for BLOCK=256 with a uint32 index. There is no
 configuration on any of the three cards where large BLOCK is the right
@@ -684,7 +724,8 @@ choice.
 
 ## What the two new cards changed beyond the prediction
 
-**Output staging scales up with the card.** BLOCK=64, 128 threads:
+**Output staging scales up with the card.** Ladder kernel, BLOCK=64, 128
+threads:
 
 | | 1050 Ti | A100 | 4090 |
 |---|---|---|---|
@@ -693,18 +734,22 @@ choice.
 
 The Phase 2b lesson "combining the two optimisations is worse than output
 alone" was Pascal-specific. On Ampere and Ada the combined variant is the
-best one. Trap list updated: attribution results do not transfer across
-architectures either.
+best one for the ladder kernel (the Huffman kernel was not timed with both).
+Trap list updated: attribution results do not transfer across architectures
+either.
 
-**The optimised kernel tracks SM clock, not bandwidth.** Best Huffman time
-for 64M symbols: A100 0.44 ms, 4090 0.20 ms — the 4090 is **2.2x faster
-with half the bandwidth**, and 2520 / 1140 MHz = 2.2x. The base kernel does
-not show this (1.26 vs 1.24 ms: latency-bound on the scattered pattern,
-clock-insensitive). Once the access pattern is fixed, the decoder is bound by
-the latency of its 64-step chain of dependent loads, and that chain runs at
-SM clock. Two cards is not a proof; it is recorded as the reading most
-consistent with the data. Achieved bandwidth confirms the decoder is nowhere
-near the memory roof on the datacenter card:
+**The optimised kernel roughly tracks SM clock, not bandwidth.** Best
+Huffman time for 64M symbols (uint32 index, `3_head2head.txt`): A100
+0.44 ms, 4090 0.20 ms — the 4090 is **2.2x faster with half the
+bandwidth**. The SM clock sampled during the base-kernel sweep of the same
+runs was 1410 MHz on the A100 and 2715–2760 MHz on the 4090, a ratio of
+1.93–1.96x: time falls roughly with SM clock (2.2x time against about 1.95x
+clock), not exactly. The base kernel does not show this (1.26 vs 1.24 ms:
+latency-bound on the scattered pattern, clock-insensitive). The reading most
+consistent with the data is that once the access pattern is fixed, the
+decoder is bound by the latency of its 64-step chain of dependent loads,
+which runs at SM clock. Two cards is not a proof. Achieved bandwidth
+confirms the decoder is nowhere near the memory roof on the datacenter card:
 
 | best configuration | GB/s | % of peak |
 |---|---|---|
@@ -716,14 +761,20 @@ near the memory roof on the datacenter card:
 
 | | 1050 Ti | A100 | 4090 |
 |---|---|---|---|
-| ladder / Huffman time | 1.055 | 0.97–1.08 | **1.26–1.36** |
+| ladder / Huffman time, same thread count (32–128, output staged) | 0.97–1.055 (0.82–1.05 in the replication) | 0.97–1.08 | 0.94–1.36 |
+| at Huffman's best thread count | 1.055 | 1.08 | **1.36** |
+| each at its best thread count | 1.056 | 0.98 | 1.11 |
 
-The ladder ties on the A100 and loses by a third on the 4090. On the *base*
-kernel at BLOCK >= 512 the ladder does beat Huffman on the A100 (l/h
-0.79–0.95) — the compute-bound regime the original hypothesis predicted —
-but those configurations are 2x slower than BLOCK=64 in absolute terms, as
-on Pascal. Three architectures, same verdict: the ladder never wins where
-you would run it.
+The ladder ties on the A100 and loses by 11% (best against best) to 36% (at
+Huffman's best thread count) on the 4090. At larger BLOCK, at Huffman's
+fastest configuration, the ladder is slower on every card (1.04–1.58x,
+`3_head2head.txt`). On the *base* kernel the ladder does beat Huffman at
+every 4090 row (l/h 0.83–0.98) and on the A100 at BLOCK=64 (0.93–0.98) and
+BLOCK >= 512 (0.79–0.95) — the compute-bound regime the original hypothesis
+predicted — but at BLOCK=64 the base kernel is 2.9x (A100) and 6x (4090)
+slower than the optimised one, and the large-BLOCK rows are 2x slower than
+BLOCK=64 in absolute terms, as on Pascal. Three architectures, same verdict:
+where you would run it, the ladder at best ties.
 
 **8-bit index + prefix-sum:** 0.994x (A100) and 1.004x (4090) the time of
 the uint32 index, +2.25 points. Free on every card.
@@ -734,11 +785,13 @@ the uint32 index, +2.25 points. Free on every card.
   gain both shrink monotonically with L2 per thread) and is corrected as a
   *threshold* (nothing switches off when the data fits).
 - On datacenter hardware the standalone decoder sits at 10–45% of peak
-  bandwidth and its time follows SM clock. The remaining headroom is not in
-  the entropy code, not in the index, and not in bandwidth: it is in the
+  bandwidth and its time falls roughly with SM clock. The remaining headroom
+  is not in the entropy code, not in the index, and not in bandwidth: it is in the
   serial chain, which is exactly what GEMM fusion or a wider-than-one-thread
   decode would attack (HANDOFF section 6).
 - Best measured configuration on each card, same design throughout:
-  Huffman, BLOCK=64, output staged (plus input on Ampere/Ada), 8-bit index.
-  Decoding the 64M-symbol sample takes 4.8 ms / 0.44 ms / 0.20 ms.
+  Huffman, BLOCK=64, output staged, 8-bit index. Decoding the 64M-symbol
+  sample takes 4.82 ms / 0.47 ms / 0.19 ms (`4_bench_idx8.txt`; the 1050 Ti
+  figure is from the unsaved run, 4.85 ms in the replication). The
+  uint32-index head-to-head's best is 4.80 / 0.44 / 0.20 ms.
 

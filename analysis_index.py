@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-(a) Mutual information ~0 must not be an artefact of looking only at the
-    first 64M weights (the embedding matrix). Checked on contiguous windows
-    spread across the whole file.
+(a) The mutual information between neighbouring exponents is 0.0002 bits
+    on the first 64M weights (the embedding matrix; analysis_vector.py).
+    Checked on contiguous windows spread across the whole file, and compared
+    with the scalar Huffman redundancy.
 (b) What fixing the INDEX is worth, the only structural headroom left.
 """
 import numpy as np
@@ -27,15 +28,18 @@ for off in [0, TOT//8, TOT//4, TOT//2, 3*TOT//4, TOT - 40_000_000]:
     hj = H(cj); hc = hj - h1; mi = h1 - hc
     mis.append(mi)
     print(f"{off:>14,} {h1:8.4f} {hc:8.4f} {mi:9.5f}")
-print(f"\nmax I(X;Y) observed: {max(mis):.5f} bits  -> neighbouring exponents "
-      f"are, for practical purposes, independent.\n")
+L, _ = canonical_huffman(counts_full)
+avg_bits = sum(int(counts_full[s]) * l for s, l in L.items()) / counts_full.sum()
+redund = avg_bits - H(counts_full)
+print(f"\nmax I(X;Y) observed: {max(mis):.5f} bits/symbol; scalar Huffman "
+      f"redundancy over the whole model: {redund:.5f} bits/symbol.\n"
+      f"I(X;Y) bounds what order-1 context coding can remove from the "
+      f"entropy; here it is {max(mis)/redund:.0%} of the redundancy.\n")
 
 print("=== (b) cost of the block index ===")
-L, _ = canonical_huffman(counts_full)
 len_of = np.zeros(256, dtype=np.int64)
 for s, l in L.items():
     len_of[s] = l
-avg_bits = sum(int(counts_full[s]) * l for s, l in L.items()) / counts_full.sum()
 print(f"Huffman over the whole model: {avg_bits:.4f} bits/exponent\n")
 
 # real block-length distribution, to see whether it fits in 8 bits

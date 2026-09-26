@@ -21,8 +21,14 @@ $PY --version || { echo "no python3"; exit 1; }
 
 # venv is cleanest, but many containers lack the module and have no sudo to
 # install it. In that case install into the system python, which in a
-# throwaway container has no downside.
-if $PY -m venv --help >/dev/null 2>&1; then
+# throwaway container has no downside. "venv --help" works even when
+# ensurepip is missing, so create a throwaway venv to test it for real.
+venv_ok() {
+    local d r; d=$(mktemp -d)
+    $PY -m venv "$d/v" >/dev/null 2>&1; r=$?
+    rm -rf "$d"; return $r
+}
+if venv_ok; then
     [ -d .venv ] || $PY -m venv .venv
     PY=./.venv/bin/python
     echo "using venv"

@@ -154,6 +154,9 @@ def huffman_kernel():
 # ---------------------------------------------------------- host-side tables
 def build_huffman_gpu_tables(lengths, codes, lut_bits=LUT_BITS):
     maxlen = max(lengths.values())
+    if maxlen > 32:
+        raise ValueError(f"Huffman code of {maxlen} bits; the kernels peek "
+                         "32 bits, so codes longer than 32 are not supported")
     order = sorted(lengths, key=lambda s: (lengths[s], s))   # canonical order
     sorted_syms = np.array(order, dtype=np.uint8)
 

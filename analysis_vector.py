@@ -4,9 +4,11 @@ Can vector (pairwise) coding gain anything on the exponent?
 
 Two very different possible sources of gain:
 
-  1. Code redundancy. Scalar Huffman already sits at 2.678 bits against an
-     entropy of 2.645: only 0.033 bits of headroom. No entropy coder,
-     arithmetic or vector, can beat that IF the symbols are independent.
+  1. Code redundancy. Over the whole model scalar Huffman sits at 2.678 bits
+     against an entropy of 2.645 (results/cpu/bench_log.txt); on the first
+     64M symbols measured here, 2.583 against 2.552. Either way only ~0.03
+     bits of headroom. No entropy coder, arithmetic or vector, can beat that
+     IF the symbols are independent.
 
   2. Correlation between neighbouring exponents. If it exists, H(X,Y) < 2*H(X)
      and pairwise (or context) coding captures the difference. This is NOT
