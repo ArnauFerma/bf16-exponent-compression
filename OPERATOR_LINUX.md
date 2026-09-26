@@ -133,7 +133,7 @@ It takes ~20 minutes and prints 5 stages:
 5. Nsight Compute profiling
 
 The script also tries to **lock the GPU clocks** with `nvidia-smi -lgc`
-(it will ask for sudo). That removes the noise from variable frequencies;
+(only if `sudo` works without a password; otherwise it skips this step). That removes the noise from variable frequencies;
 it cannot be done under Windows, which is why the reference measurements
 are noisier than these will be. If it fails, nothing is lost; it continues.
 

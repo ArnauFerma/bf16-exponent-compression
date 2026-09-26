@@ -52,6 +52,7 @@ def reduction(block, idx_bytes_per_block):
     return 100 * (1 - per_w/2), per_w
 
 print(f"{'index scheme':>42} {'B/block':>9} {'BLOCK=64':>10} {'BLOCK=256':>10}")
+loss_u32 = reduction(256, 4.0)[0] - reduction(64, 4.0)[0]
 schemes = [
     ("absolute uint32 (current spec)",           4.0),
     ("relative uint16 + uint32/superblock(256)",  2.0 + 4.0/256),
@@ -63,6 +64,6 @@ for name, b in schemes:
 
 print(f"""
 Reading: the measured fast point (BLOCK=64, output in shared, 4.80 ms) today
-loses 2.35 points of compression against BLOCK=256 ONLY because of the index.
+loses {loss_u32:.2f} points of compression against BLOCK=256 ONLY because of the index.
 With a hierarchical 16-bit index that loss almost disappears, without touching
 the decode kernel or the entropy code.""")

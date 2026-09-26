@@ -1,5 +1,5 @@
 # All measurements + profiling, on Windows.
-# Uso:  powershell -ExecutionPolicy Bypass -File run_all.ps1
+# Usage:  powershell -ExecutionPolicy Bypass -File run_all.ps1
 $ErrorActionPreference = "Continue"
 Set-Location $PSScriptRoot
 $py = ".\.venv\Scripts\python.exe"

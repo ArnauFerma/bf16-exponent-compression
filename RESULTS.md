@@ -187,7 +187,7 @@ decoding, vectorized loads). That prize is far larger than the 0.86 points
 separating the two codes.
 
 **2. Output dominates the traffic.** At BLOCK=64, 88.7 MB moves, of which
-**64 MB (71%) is the exponent output**. The two bitstreams differ by less than
+**64 MB (72%) is the exponent output**. The two bitstreams differ by less than
 1 MB. Structurally the entropy code can only influence ~23% of the traffic, and
 fusing the sign+mantissa merge to emit BF16 directly would shrink that fraction
 further. That is why the two codecs converge, and this is **not** specific to
@@ -346,7 +346,7 @@ All of this is Pascal with 1 MiB of L2. On an RTX 4070 (36 MB L2, 534 B per
 resident thread, 6.3x better) the working set at BLOCK=1024 is 24.5 MB and
 **fits**. Prediction: the cliff should disappear, staging the input in shared
 should stop mattering, and BLOCK=512-1024 would become viable — the first
-configuration where the best compression (32.3%) and good speed coincide.
+configuration where the best compression (32.2%) and good speed coincide.
 
 ---
 
@@ -658,7 +658,7 @@ Attribution run, 64 threads:
 
 **Not confirmed as stated — and more informative than a yes.** The gain does
 not switch off when the working set fits; it decays smoothly with L2 per
-thread: 85 B -> 4.4x, 190 B -> 2.0x, 384 B -> 1.2x. Coalescing the input
+thread: 85 B -> 4.4x, 190 B -> 2.1x, 384 B -> 1.2x. Coalescing the input
 helps even when every byte is an L2 hit, because 32 scattered streams per
 warp are served more slowly from L2 than one contiguous load. The
 L2-per-thread figure predicts the *size* of the effect, not its presence.
@@ -671,7 +671,7 @@ staged), Huffman, best thread count per row:
 | BLOCK | A100 | 4090 |
 |---|---|---|
 | 64 | **0.44 ms** | **0.20 ms** |
-| 256 | 0.97 | 0.39 |
+| 256 | 0.91 | 0.39 |
 | 1024 | 1.52 | 1.21 |
 
 **Moot rather than wrong.** Large BLOCK is 3–6x slower than BLOCK=64 on both
@@ -725,7 +725,7 @@ but those configurations are 2x slower than BLOCK=64 in absolute terms, as
 on Pascal. Three architectures, same verdict: the ladder never wins where
 you would run it.
 
-**8-bit index + prefix-sum:** 1.006x (A100) and 0.996x (4090) the time of
+**8-bit index + prefix-sum:** 0.994x (A100) and 1.004x (4090) the time of
 the uint32 index, +2.25 points. Free on every card.
 
 ## Taken together

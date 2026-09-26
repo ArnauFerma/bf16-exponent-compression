@@ -1,5 +1,5 @@
 # Environment setup on a Windows machine with an NVIDIA GPU.
-# Uso:  powershell -ExecutionPolicy Bypass -File setup_windows.ps1
+# Usage:  powershell -ExecutionPolicy Bypass -File setup_windows.ps1
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
@@ -40,6 +40,10 @@ else { Write-Host "already extracted" }
 
 Write-Host "`n== kernel correctness ==" -ForegroundColor Cyan
 & $py verify_kernels.py 256 32000000
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "VERIFICATION FAILED: do not continue, the timings would be worthless" -ForegroundColor Red
+    exit 1
+}
 
 Write-Host "`nDone. Now:" -ForegroundColor Green
 Write-Host "  powershell -ExecutionPolicy Bypass -File run_all.ps1"

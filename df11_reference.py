@@ -5,10 +5,11 @@ Test bench: DFloat11-style lossless compression of BF16 weights.
 - CANONICAL Huffman over the exponent field (prefix-free by construction).
 - Sign + mantissa left raw (their entropy is already ~maximal).
 - COARSE index: one offset per block of N symbols, not per weight.
-  -> parallelisable at block level, ~0.05% overhead.
+  -> parallelisable at block level. Offsets are stored here as uint64
+     (8 B per 256 weights, ~2.3% of the output); bench.py assumes uint32.
 
 Usage:
-    python3 df11_reference.py weights_bf16.bin
+    python3 df11_reference.py outputs/weights_bf16.bin
 """
 import sys, heapq, struct
 import numpy as np
@@ -22,7 +23,7 @@ def canonical_huffman(counts):
     if len(syms) == 1:                       # degenerate case
         return {syms[0][1]: 1}, {syms[0][1]: 0}
 
-    heap = [(c, 1, [s]) for c, s in syms]    # (weight, max_depth, symbols)
+    heap = [(c, 1, [s]) for c, s in syms]    # (weight, tie-break: 1 leaf / 0 merged, symbols)
     heapq.heapify(heap)
     depth = {s: 0 for _, s in syms}
     while len(heap) > 1:
@@ -129,7 +130,7 @@ def decode(blob):
 
 # ---------------------------------------------------------------- main
 if __name__ == "__main__":
-    path = sys.argv[1] if len(sys.argv) > 1 else "weights_bf16.bin"
+    path = sys.argv[1] if len(sys.argv) > 1 else "outputs/weights_bf16.bin"
     bf16 = np.fromfile(path, dtype=np.uint16)
     print(f"File:    {path}")
     print(f"Weights: {bf16.size:,}   ({bf16.nbytes:,} bytes)\n")

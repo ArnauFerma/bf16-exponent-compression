@@ -12,8 +12,9 @@ conversion (numpy has no bfloat16 dtype).
 Streams tensor by tensor: never loads the whole file into RAM.
 
 Tensors whose content is byte-for-byte identical to one already written are
-skipped (e.g. lm_head.weight when it is a copy of embed_tokens.weight under
-tie_word_embeddings). A weight that exists once in the model is counted once.
+skipped: whichever copy comes later in the file (for Qwen3-0.6B, whose
+lm_head.weight and embed_tokens.weight are identical, embed_tokens.weight is
+the one skipped). A weight that exists once in the model is counted once.
 """
 import json, sys, os, hashlib
 import numpy as np

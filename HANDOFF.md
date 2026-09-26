@@ -49,7 +49,7 @@ repeats every kernel measurement on an **A100** and an **RTX 4090**.
 | Mutual information between the BF16 fields | I(exp; mant) = **0.040 bits/weight**; sign independent of both | Exact joint histogram over all 596M unique weights |
 | Field split vs full-alphabet Huffman | **0.076 bits/weight = 0.47 points** given away | Both rates computed analytically from exact counts (Phase 2d) |
 | **BLOCK cliff is an L2 effect** | 16.2x on 85 B/thread -> 1.96x (A100, 190 B) -> 1.71x (4090, 384 B) | Same code on three architectures (Phase 2e) |
-| Input staging gain decays with L2/thread, does not switch off | 4.4x -> 2.0x -> 1.2x at BLOCK=256 | Phase 2e; corrects Phase 2b's threshold reading |
+| Input staging gain decays with L2/thread, does not switch off | 4.4x -> 2.1x -> 1.2x at BLOCK=256 | Phase 2e; corrects Phase 2b's threshold reading |
 | Ladder loses at the operating point on every card | l/h 1.05 / ~1.0 / 1.3 | Optimised kernel, BLOCK=64, three cards |
 | Optimised decoder time follows SM clock | 4090 2.2x faster than A100 with half the bandwidth; clock ratio 2.2x | Two cards; consistent with, not proof of, a latency-bound chain |
 

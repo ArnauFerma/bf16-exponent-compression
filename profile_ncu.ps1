@@ -1,6 +1,6 @@
 # Nsight Compute profiling. Needs ncu on the PATH and counter permissions
 # (see OPERATOR_WINDOWS.md).
-# Uso:  powershell -ExecutionPolicy Bypass -File profile_ncu.ps1
+# Usage:  powershell -ExecutionPolicy Bypass -File profile_ncu.ps1
 $ErrorActionPreference = "Continue"
 Set-Location $PSScriptRoot
 $py = ".\.venv\Scripts\python.exe"

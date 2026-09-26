@@ -50,7 +50,7 @@ Two reasons:
 ### Cheap alternative: **RTX 4090, ~0.34 USD/hour**
 
 Useful, but at 384 B/thread it sits close to a 4070, so it gives less
-information per euro. Choose it only to spend cents.
+information per dollar. Choose it only to spend cents.
 
 ### Do not rent
 

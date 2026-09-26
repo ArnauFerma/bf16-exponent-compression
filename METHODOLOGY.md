@@ -310,8 +310,8 @@ bash run_all.sh       # ~20 minutes on the reference hardware
 executes, in order: `bench_gpu.py` (Phase 2 sweep + floor), `bench_opt.py`
 (Phase 2b attribution), `bench_head2head.py` (Phase 2b comparison),
 `bench_idx8.py` (Phase 2c index), and `profile_ncu.sh` if `ncu` is present. It
-leaves `resultados.tar.gz` with one text log per stage plus
-`outputs/gpu_bench.json`.
+leaves `results.tar.gz` (`results.zip` on Windows) with one text log per stage plus
+`gpu_bench.json`, `gpu_info.txt` and `env_info.json`.
 
 CPU-only parts (`bench.py`, `analysis_*.py`) need only the extracted weights
 and run on any machine with ~2 GB free RAM.
@@ -363,7 +363,7 @@ RESULTS.md can be checked against the log it was transcribed from:
   which is the unlocked-clock noise floor on this card. The one pair to read
   with that in mind is the 2c index comparison: in the transcribed run the
   8-bit index cost nothing (4.82 vs 4.81); in the replication it is 5%
-  faster (4.85 vs 5.11), with the uint32 reference landing 6% above the
+  faster (4.85 vs 5.11), with the uint32 reference landing 5% above the
   same kernel's time in the head-to-head stage of the same run. The claim
   supported by both runs is "not slower", not a precise delta.
 
