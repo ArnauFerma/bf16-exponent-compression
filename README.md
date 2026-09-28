@@ -147,6 +147,11 @@ author's responsibility. Nothing here has been peer-reviewed. The
 measurements have not yet been reproduced by anyone else;
 [METHODOLOGY.md](METHODOLOGY.md) exists so that they can be.
 
+## Reporting a problem
+
+Found a problem, or a number that does not match? Please tell us: `REPORTING.md` says what helps.
+
+
 ## License
 
 Code (`*.py`, `*.sh`, `*.ps1`) is released under the MIT License
